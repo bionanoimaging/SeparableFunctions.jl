@@ -18,9 +18,16 @@ fct = (r, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 @time q = collect((prod(fct.(Tuple(c), (0.0,0.0), sigma)) for c in CartesianIndices(sz)));
 
 using IndexFunArrays
-@time q = collect(gaussian(sz, sigma=sigma));
-@time e = collect(exp_ikx(sz, scale=(1.1,2.2))); # 0.19
-@time e = exp_ikx_sep(sz, (1.1,2.2)); # 0.006
+@time g = collect(gaussian(sz, sigma=sigma)); # 0.05
+@time gs = gaussian_sep(sz, sigma); # 0.003
+@vt g gs
+
+k = (0.1,0.2) ./ (pi .* sz)
+@time e = collect(exp_ikx(sz, scale=k)); # 0.19
+@vp e
+@time es = exp_ikx_sep(sz, k); # 0.006
+
+@vtp e es
 
 # @vt q w
 
