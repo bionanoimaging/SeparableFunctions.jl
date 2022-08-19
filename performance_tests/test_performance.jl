@@ -22,10 +22,10 @@ using IndexFunArrays
 @time gs = gaussian_sep(sz, sigma); # 0.003
 @vt g gs
 
-k = (0.1,0.2) ./ (pi .* sz)
-@time e = collect(exp_ikx(sz, scale=k)); # 0.19
+Δx = (1.1, 2.2) # ./ (pi .* sz)
+@time e = collect(exp_ikx(sz, shift_by=Δx)); # 0.19
 @vp e
-@time es = exp_ikx_sep(sz, k); # 0.006
+@time es = exp_ikx_sep(sz, Δx); # 0.006
 
 @vtp e es
 

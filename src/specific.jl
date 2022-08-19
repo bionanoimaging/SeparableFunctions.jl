@@ -49,7 +49,7 @@ function generate_functions_expr()
         # function_name, extra_vars,  function_expression:
         (:(gaussian), (:sigma,), :((x,pos,sz,sigma) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32),
         (:(sinc), (:scale,), :((x,pos,sz,scale) -> sinc((x-pos)/scale)), Float32),
-        (:(exp_ikx), (:k,), :((x,pos,sz,k) -> cis((pos-x)*(pi*sz*k))), ComplexF32),
+        (:(exp_ikx), (:k,), :((x,pos,sz,Δx) -> cis((pos-x)*(2pi*Δx/sz))), ComplexF32),
     ]
     return functions
 end
