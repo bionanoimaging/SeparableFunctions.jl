@@ -6,8 +6,8 @@
 ```julia
 ```
 """
-function arg_n(n,args)
-    return (a[n] for a in args)
+function arg_n(n, args)
+    return (a[1+((n-1)%lastindex(a))] for a in args)
 end
 
 function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; center=sz.÷2 .+1) where {AT, N}
@@ -27,17 +27,19 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; cent
 end
 
 """
-    separable_view{N}(fct, sz, args...)
+    separable_view{N}(fct, sz, args...; center =  sz.÷2 .+1, operation = .*)
     creates an array view of an N-dimensional separable function.
     Note that this view consumes much less memory than a full allocation of the collected result.
     Note also that an N-dimensional calculation expression may be much slower than this view reprentation of a product of N one-dimensional arrays.
     See the example below.
     
 # Arguments:
-+ fct: The separable function, with a number of arguments corresponding to `length(args)`, each corresponding to a vector of separable inputs of length N.
-        The first argument of this function is a Tuple corresponding the centered indices.
-+ sz: The size of the N-dimensional array to create
-+ args...: a list of arguments, each being an N-dimensional vector
++ `fct`:          The separable function, with a number of arguments corresponding to `length(args)`, each corresponding to a vector of separable inputs of length N.
+                  The first argument of this function is a Tuple corresponding the centered indices.
++ `sz`:           The size of the N-dimensional array to create
++ `args`...:      a list of arguments, each being an N-dimensional vector
++ `center`:       position of the center from which the position is measured
++ `operation`:    the separable operation connecting the separable dimensions
 
 # Example:
 ```julia
@@ -52,21 +54,21 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2),(0.5,1.0))
  6.50731e-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1) where {TA, N}
+function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1, operation = *) where {TA, N}
     res = calculate_separables(TA, fct, sz, args...; center=center)
-    return LazyArray(@~ .*(res...)) # to prevent premature evaluation
+    return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
 end
 
-function separable_view(fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1) where {N}
-    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; center=center)
+function separable_view(fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1, operation = *) where {N}
+    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; center=center, operation=operation)
 end
 
-function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1) where {TA, N}
+function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1, operation = *) where {TA, N}
     res = calculate_separables(TA, fct, sz, args...; center=center)
-    .*(res...)
+    operation.(res...)
 end
 
-function separable_create(fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1) where {N}
+function separable_create(fct, sz::NTuple{N, Int}, args...; center = sz.÷2 .+1, operation = *) where {N}
     res = calculate_separables(DefaultArrType, fct, sz, args...; center=center)
-    .*(res...)
+    operation.(res...)
 end

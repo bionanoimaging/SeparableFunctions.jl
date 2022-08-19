@@ -24,12 +24,20 @@ using IndexFunArrays
 
 Δx = (1.1, 2.2) # ./ (pi .* sz)
 @time e = collect(exp_ikx(sz, shift_by=Δx)); # 0.19
-@vp e
+@time e .= exp_ikx(sz, shift_by=Δx); # 0.10
+# @vp e
 @time es = exp_ikx_sep(sz, Δx); # 0.006
+@time es .= exp_ikx_sep_lz(sz, Δx); # 0.003
+# @vtp e es
+@time r = collect(rr2(sz)); # 0.01
+@time rs = rr2_sep(sz, 1.0); # 0.003
+@time rs .= rr2_sep_lz(sz, (1.0,1.0)); # 0.0015
+# @vt r rs
+@time b = collect(box(sz)); # 0.01
+@time bs = box_sep(sz, sz./2); # 0.001
+@time bs .= box_sep_lz(sz, sz./2); # 0.027  (!!!)
+# @vt b bs
 
-@vtp e es
-
-# @vt q w
 
 # using CUDA
 # CUDA.@time c_my_gaussian = separable_view(CuArray{Float32}, fct, sz, (0.1,0.2), sigma);

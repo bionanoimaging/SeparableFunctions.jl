@@ -46,10 +46,13 @@ function generate_functions_expr()
     # x_expr = :(scale .* (x .- offset))
 
     functions = [
-        # function_name, extra_vars,  function_expression:
-        (:(gaussian), (:sigma,), :((x,pos,sz,sigma) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32),
-        (:(sinc), (:scale,), :((x,pos,sz,scale) -> sinc((x-pos)/scale)), Float32),
-        (:(exp_ikx), (:k,), :((x,pos,sz,Δx) -> cis((pos-x)*(2pi*Δx/sz))), ComplexF32),
+        # function_name, extra_variables beyond (x, pos),  function_expression, result_type:
+        (:(gaussian), (:sigma,), :((x,pos,sz,sigma) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32, *),
+        (:(sinc), (:scale,), :((x,pos,sz,scale) -> sinc((x-pos)/scale)), Float32, *),
+        (:(exp_ikx), (:Δx,), :((x,pos,sz,Δx) -> cis((pos-x)*(2pi*Δx/sz))), ComplexF32, *),
+        (:(ramp), (:slope,), :((x,pos,sz,slope) -> slope*(x-pos)), Float32, +), # different meaning than IFA ramp
+        (:(rr2), (:scale,), :((x,pos,sz,scale) -> (scale*scale)*x*x), Float32, +),
+        (:(box), (:boxsize,), :((x,pos,sz,boxsize) -> abs(x-pos) <= (boxsize/2)), Bool, *),
     ]
     return functions
 end
@@ -59,25 +62,24 @@ for F in generate_functions_expr()
 
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {TA, N}
         fct2 = $(F[3]) # to assign the function to a symbol
-        separable_create(TA, fct2, sz, pos, sz, $(F[2]...); center=center)
+        separable_create(TA, fct2, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
     end
  
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {N}
         fct1 = $(F[3]) # to assign the function to a symbol
-        
-        separable_create(Array{$(F[4])}, fct1, sz, pos, sz, $(F[2]...); center=center)
+        separable_create(Array{$(F[4])}, fct1, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
     end
 
     @eval function $(Symbol(F[1], :_sep_lz))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {TA, N}
         fct4 = $(F[3]) # to assign the function to a symbol
-        separable_view(TA, fct4, sz, pos, sz, $(F[2]...); center=center)
-    end
-    
-    @eval function $(Symbol(F[1], :_sep_lz))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {N}
-        fct3 = $(F[3]) # to assign the function to a symbol
-        separable_view(Array{$(F[4])}, fct3, sz, pos, sz, $(F[2]...); center=center)
+        separable_view(TA, fct4, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
     end
 
+    @eval function $(Symbol(F[1], :_sep_lz))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {N}
+        fct3 = $(F[3]) # to assign the function to a symbol
+        separable_view(Array{$(F[4])}, fct3, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
+    end
+ 
     @eval export $(Symbol(F[1], :_sep))
     @eval export $(Symbol(F[1], :_sep_lz))
 end 
