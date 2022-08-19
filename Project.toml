@@ -1,0 +1,7 @@
+name = "SeparableFunctions"
+uuid = "c8c7ead4-852c-491e-a42d-3d43bc74259e"
+authors = ["RainerHeintzmann <heintzmann@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
