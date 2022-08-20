@@ -50,6 +50,7 @@ function generate_functions_expr()
         # function_name, function_expression (always startin with x, sz, ...), result_type:
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         (:(gaussian), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
+        (:(normal), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
         (:(sinc), :((x,sz,scale) -> sinc(x/scale)), Float32, *),
         (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-2pi*shift_by/sz))), ComplexF32, *),
         (:(ramp), :((x,sz; slope) -> slope*x), Float32, +), # different meaning than IFA ramp
@@ -76,7 +77,7 @@ for F in generate_functions_expr()
         fct = $(F[2]) # to assign the function to a symbol
         calculate_separables(TA, fct, sz, args...; kwargs...)
     end
- 
+
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[2]) # to assign the function to a symbol
         calculate_separables(Array{$(F[3])}, fct, sz, args...; kwargs...)

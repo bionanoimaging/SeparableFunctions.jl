@@ -15,6 +15,14 @@ fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 @time my_gaussian = gaussian_lz(sz; sigma=sigma);
 @time q = collect(my_gaussian); # 0.002 sec
 
+@time my_normal = normal_col(Array{Float64}, sz); 
+@time my_normal = normal_lz(Array{Float64}, sz; sigma=sigma);
+@time my_normal = normal_lz(sz; sigma=sigma);
+@time q2 = collect(my_normal); # 
+@time sum(my_normal) # 0.0035. Does NOT allocate! But is not as accurate.
+my_sep = normal_sep(sz; sigma=sigma);
+@time sum(.*(my_sep...)) # Does allocate. But is more accurate
+
 fct = (r, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 @time q = collect((prod(fct.(Tuple(c), (0.0,0.0), sigma)) for c in CartesianIndices(sz))); # takes 3 sec!
 
