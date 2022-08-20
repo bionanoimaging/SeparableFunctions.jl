@@ -47,14 +47,14 @@ bs = box_sep(sz, boxsize=sz./2);
 # @vt b bs
 
 # MWE:
-using BenchmarkTools
-x = 1:2000 .< 1000 
-y = (1:1900)' .< 1000 
-a = x .* y;
-@btime a .= $x .* $y; # 2.8 ms
-la = LazyArray(@~ x .* y);
-@btime a = collect($la); # 2.6 ms
-@btime a .= $la; # 30.8 ms (Problem!)
+# using BenchmarkTools
+# x = 1:2000 .< 1000 
+# y = (1:1900)' .< 1000 
+# a = x .* y;
+# @btime a .= $x .* $y; # 2.8 ms
+# la = LazyArray(@~ x .* y);
+# @btime a = collect($la); # 2.6 ms
+# @btime a .= $la; # 30.8 ms (Problem!)
 
 if false
     using CUDA
@@ -63,3 +63,9 @@ if false
     CUDA.@time c_my_gaussian2 = .*(c_sep...)  # 2 ms (GPU) vs 2 ms (CPU) # apply the separable collection
     CUDA.@time c_my_gaussian2 .= .*(c_sep...)  # 2 ms (GPU) vs 1 ms (CPU) # apply the separable collection in place. No allocation
 end
+
+# How is the performance for a propagator, which is only partially separable?
+@time p = propagator(Float32, sz) # 0.08 sec
+myrr2 = rr2_sep(sz)
+@time p2 = exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- (.+(myrr2...)))) .* 1f0)  # 0.036 sec 
+@time p2 = exp.(1f0im .* sqrt.(max.(0.0, 100.0 .- (.+(myrr2...)))) .* 1.0)  # 0.04 sec 
