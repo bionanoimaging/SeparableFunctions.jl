@@ -33,11 +33,24 @@ using IndexFunArrays
 @time rs = rr2_sep(sz, 1.0); # 0.003
 @time rs .= rr2_sep_lz(sz, (1.0,1.0)); # 0.0015
 # @vt r rs
-@time b = collect(box(sz)); # 0.01
-@time bs = box_sep(sz, sz./2); # 0.001
-@time bs .= box_sep_lz(sz, sz./2); # 0.027  (!!!)
+@btime $b = collect(box($sz)); # 0.01
+@btime $bs = box_sep($sz, $sz./2); # 0.001
+@btime $bs .= box_sep_lz($sz, $sz./2); # 0.027  (!!!)
+fct = (x, pos, d) -> abs(x -pos) < 500 
+fct = (x) -> abs(x) < 500 
+res = SeparableFunctions.calculate_separables(Array{Bool}, fct, sz)
+
 # @vt b bs
 
+# MWE:
+x = 1:2000 .< 1000 
+y = (1:1900)' .< 1000 
+a = x .* y
+@btime a .= $x .* $y;
+la = LazyArray(@~ x .* y);
+# @btime la = LazyArray(@~ $x .* $y);
+@btime a .= $la;
+@btime a = collect($la);
 
 # using CUDA
 # CUDA.@time c_my_gaussian = separable_view(CuArray{Float32}, fct, sz, (0.1,0.2), sigma);
