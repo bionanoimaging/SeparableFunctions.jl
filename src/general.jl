@@ -42,15 +42,15 @@ function kwarg_n(n, kwargs)
     (;zip(keys(kwargs), arg_n(n, values(kwargs)))...)
 end
 
-function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
-    idc = pick_n(1, scale) .* (start[1]:start[1]+sz[1]-1)
+    idc = pick_n(1, scale) .* ((start[1]:start[1]+sz[1]-1) .- pick_n(1, pos))
     res = Vector{AT}()
-    push!(res, collect(fct.(idc, arg_n(1, args)...; kwarg_n(1, kwargs)...)))
+    push!(res, collect(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...)))
     for d = 2:N
-        idc = pick_n(d, scale) .* (start[d]:start[d]+sz[d]-1)
+        idc = pick_n(d, scale) .* ((start[d]:start[d]+sz[d]-1) .- pick_n(d, pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
-        myaxis = collect(reorient(fct.(idc, arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N)))
+        myaxis = collect(reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N)))
         # LazyArray representation of expression
         push!(res, myaxis)
     end
@@ -58,7 +58,7 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; offs
 end
 
 """
-    separable_view{N}(fct, sz, args...; offset =  sz.÷2 .+1, scale = 1.0, operation = .*)
+    separable_view{N}(fct, sz, args...; pos=zero(real(eltype(AT))), offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operation = .*)
     creates an array view of an N-dimensional separable function.
     Note that this view consumes much less memory than a full allocation of the collected result.
     Note also that an N-dimensional calculation expression may be much slower than this view reprentation of a product of N one-dimensional arrays.

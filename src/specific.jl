@@ -1,5 +1,5 @@
 """
-    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}, sigma; pos=zeros(Float32,N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 creates a multidimensional Gaussian by exployting separability speeding up the calculation. To create it on the GPU
 supply for example CuArray{Float32} as the array type.
@@ -8,10 +8,11 @@ supply for example CuArray{Float32} as the array type.
 + `TA`:     optionally an array type can be supplied. The default is Array{Float32}
 + `sz`:     size of the result array
 + `sigma`:  tuple of standard-deviation along each dimensional
-+ `pos`:    position of the gaussian
++ `pos`:    position of the gaussian in relationship to the center defined by `offset`
++ `offset`: center position of the array
 ```julia
 julia> pos = (1.1, 0.2); sigma = (0.5, 1.0);
-julia> my_gaussian = gaussian_sep((6,5), sigma, pos)
+julia> my_gaussian = gaussian_sep((6,5); sigma=sigma, pos=pos)
 6×5 Matrix{Float32}:
  2.22857f-16  1.21991f-15  2.4566f-15   1.81989f-15  4.95978f-16
  3.99823f-10  2.18861f-9   4.40732f-9   3.26502f-9   8.89822f-10
@@ -46,14 +47,14 @@ function generate_functions_expr()
     # x_expr = :(scale .* (x .- offset))
 
     functions = [
-        # function_name, extra_variables beyond (x, pos),  function_expression, result_type:
+        # function_name, function_expression (always startin with x, sz, ...), result_type:
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
-        (:(gaussian), (), :((x,pos,sz;sigma=1.0) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32, *),
-        (:(sinc), (:scale,), :((x,pos,sz,scale) -> sinc((x-pos)/scale)), Float32, *),
-        (:(exp_ikx), (:Δx,), :((x,pos,sz,Δx) -> cis((pos-x)*(2pi*Δx/sz))), ComplexF32, *),
-        (:(ramp), (:slope,), :((x,pos,sz,slope) -> slope*(x-pos)), Float32, +), # different meaning than IFA ramp
-        (:(rr2), (), :((x,pos,sz) -> (x*x)), Float32, +),
-        (:(box), (:boxsize,), :((x,pos,sz,boxsize) -> abs(x-pos) <= (boxsize/2)), Bool, *),
+        (:(gaussian), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
+        (:(sinc), :((x,sz,scale) -> sinc(x/scale)), Float32, *),
+        (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-2pi*shift_by/sz))), ComplexF32, *),
+        (:(ramp), :((x,sz; slope) -> slope*x), Float32, +), # different meaning than IFA ramp
+        (:(rr2), :((x,sz) -> (x*x)), Float32, +),
+        (:(box), :((x,sz; boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *),
     ]
     return functions
 end
@@ -61,36 +62,36 @@ end
 for F in generate_functions_expr() 
     # default functions with offset and scaling behavior
  
-    @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
-        fct = $(F[3]) # to assign the function to a symbol
-        separable_create(TA, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
+    @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
+        fct = $(F[2]) # to assign the function to a symbol
+        separable_create(TA, fct, sz, args...; operation=$(F[4]), kwargs...)
     end
  
-    @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
-        fct = $(F[3]) # to assign the function to a symbol
-        separable_create(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
+    @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
+        fct = $(F[2]) # to assign the function to a symbol
+        separable_create(Array{$(F[3])}, fct, sz, args...; operation=$(F[4]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
-        fct = $(F[3]) # to assign the function to a symbol
-        calculate_separables(TA, fct, sz, pos, sz, $(F[2]...); kwargs...)
+    @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
+        fct = $(F[2]) # to assign the function to a symbol
+        calculate_separables(TA, fct, sz, args...; kwargs...)
     end
  
-    @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
-        fct = $(F[3]) # to assign the function to a symbol
-        calculate_separables(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); kwargs...)
+    @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
+        fct = $(F[2]) # to assign the function to a symbol
+        calculate_separables(Array{$(F[3])}, fct, sz, args...; kwargs...)
+    end
+ 
+    @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
+        fct = $(F[2]) # to assign the function to a symbol
+        separable_view(TA, fct, sz, args...; operation=$(F[4]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
-        fct = $(F[3]) # to assign the function to a symbol
-        separable_view(TA, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
+    @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
+        fct = $(F[2]) # to assign the function to a symbol
+        separable_view(Array{$(F[3])}, fct, sz, args...; operation=$(F[4]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
-        fct = $(F[3]) # to assign the function to a symbol
-        separable_view(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
-    end
-  
     # collected: fast separable calculation but resulting in an ND array
     @eval export $(Symbol(F[1], :_col))
     # separated: a vector of separated contributions is returned and the user has to combine them
