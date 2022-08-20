@@ -1,5 +1,5 @@
 """
-    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); center=sz.÷2 .+1) where {TA, N}
+    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 creates a multidimensional Gaussian by exployting separability speeding up the calculation. To create it on the GPU
 supply for example CuArray{Float32} as the array type.
@@ -21,24 +21,24 @@ julia> my_gaussian = gaussian_sep((6,5), sigma, pos)
  0.0175975    0.0963276    0.19398      0.143704     0.0391639```
 """
 gaussian_sep
-# function gaussian_sep(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); center=sz.÷2 .+1) where {TA, N}
+# function gaussian_sep(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {TA, N}
 #     invsigma22 = 1 ./(2 .*sigma.^2)
 #     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_create(TA, fct, sz, invsigma22, pos; center=center)
+#     separable_create(TA, fct, sz, invsigma22, pos; offset=offset)
 # end
 
-# function gaussian_sep(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); center=sz.÷2 .+1) where {N}
-#     gaussian_sep(DefaultArrType, sz, sigma, pos; center=center)
+# function gaussian_sep(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {N}
+#     gaussian_sep(DefaultArrType, sz, sigma, pos; offset=offset)
 # end
 
-# function gaussian_sep_lz(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); center=sz.÷2 .+1) where {TA, N}
+# function gaussian_sep_lz(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {TA, N}
 #     invsigma22 = 1 ./(2 .*sigma.^2)
 #     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_view(TA, fct, sz, invsigma22, pos; center=center)
+#     separable_view(TA, fct, sz, invsigma22, pos; offset=offset)
 # end
 
-# function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); center=sz.÷2 .+1) where {N}
-#     gaussian_sep_lz(DefaultArrType, sz, sigma, pos; center=center)
+# function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {N}
+#     gaussian_sep_lz(DefaultArrType, sz, sigma, pos; offset=offset)
 # end
 
 function generate_functions_expr()
@@ -47,11 +47,12 @@ function generate_functions_expr()
 
     functions = [
         # function_name, extra_variables beyond (x, pos),  function_expression, result_type:
-        (:(gaussian), (:sigma,), :((x,pos,sz,sigma) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32, *),
+        # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
+        (:(gaussian), (), :((x,pos,sz;sigma=1.0) -> exp(-(x-pos)^2/(2 .* sigma^2))), Float32, *),
         (:(sinc), (:scale,), :((x,pos,sz,scale) -> sinc((x-pos)/scale)), Float32, *),
         (:(exp_ikx), (:Δx,), :((x,pos,sz,Δx) -> cis((pos-x)*(2pi*Δx/sz))), ComplexF32, *),
         (:(ramp), (:slope,), :((x,pos,sz,slope) -> slope*(x-pos)), Float32, +), # different meaning than IFA ramp
-        (:(rr2), (:scale,), :((x,pos,sz,scale) -> (scale*scale)*x*x), Float32, +),
+        (:(rr2), (), :((x,pos,sz) -> (x*x)), Float32, +),
         (:(box), (:boxsize,), :((x,pos,sz,boxsize) -> abs(x-pos) <= (boxsize/2)), Bool, *),
     ]
     return functions
@@ -59,27 +60,41 @@ end
 
 for F in generate_functions_expr() 
     # default functions with offset and scaling behavior
-
-    @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {TA, N}
-        fct2 = $(F[3]) # to assign the function to a symbol
-        separable_create(TA, fct2, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
+ 
+    @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_create(TA, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
     end
  
-    @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {N}
-        fct1 = $(F[3]) # to assign the function to a symbol
-        separable_create(Array{$(F[4])}, fct1, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
+    @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_create(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_sep_lz))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {TA, N}
-        fct4 = $(F[3]) # to assign the function to a symbol
-        separable_view(TA, fct4, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
-    end
-
-    @eval function $(Symbol(F[1], :_sep_lz))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); center=sz.÷2 .+1) where {N}
-        fct3 = $(F[3]) # to assign the function to a symbol
-        separable_view(Array{$(F[4])}, fct3, sz, pos, sz, $(F[2]...); center=center, operation=$(F[5]))
+    @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_separables(TA, fct, sz, pos, sz, $(F[2]...); kwargs...)
     end
  
+    @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_separables(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); kwargs...)
+    end
+
+    @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {TA, N}
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_view(TA, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
+    end
+
+    @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, $(F[2]...), pos=zeros(Float32, N); kwargs...) where {N}
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_view(Array{$(F[4])}, fct, sz, pos, sz, $(F[2]...); operation=$(F[5]), kwargs...)
+    end
+  
+    # collected: fast separable calculation but resulting in an ND array
+    @eval export $(Symbol(F[1], :_col))
+    # separated: a vector of separated contributions is returned and the user has to combine them
     @eval export $(Symbol(F[1], :_sep))
-    @eval export $(Symbol(F[1], :_sep_lz))
+    # lazy: A LazyArray representation is returned
+    @eval export $(Symbol(F[1], :_lz))
 end 
