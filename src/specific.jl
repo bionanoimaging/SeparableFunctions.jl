@@ -51,7 +51,7 @@ function generate_functions_expr()
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         (:(gaussian), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
         (:(normal), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
-        (:(sinc), :((x,sz,scale) -> sinc(x/scale)), Float32, *),
+        (:(sinc), :((x,sz) -> sinc(x)), Float32, *),
         (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-2pi*shift_by/sz))), ComplexF32, *),
         (:(ramp), :((x,sz; slope) -> slope*x), Float32, +), # different meaning than IFA ramp
         (:(rr2), :((x,sz) -> (x*x)), Float32, +),
@@ -59,6 +59,15 @@ function generate_functions_expr()
     ]
     return functions
 end
+
+# would be nice to have a macro which defines all those function extensions.
+# But its not quite that simple. First try:
+# macro define_separable(basename, fct, basetype, operation)
+#     @eval function $(Symbol(basename, :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
+#         fct = $(fct) # to assign the function to a symbol
+#         separable_create(TA, fct, sz, args...; operation=$(operation), kwargs...)
+#     end
+# end
 
 for F in generate_functions_expr() 
     # default functions with offset and scaling behavior
