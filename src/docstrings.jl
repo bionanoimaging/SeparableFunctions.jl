@@ -272,7 +272,8 @@ $(returns_sep_mul)
 ramp_sep
 
 ###
-exp_ikx_docstring = "yield an `exp.(1im .* k .* Δx)` function. A scaling of one means that the `shift_by` argument corresponds to `Δx` in integer pixels, but the term is in Fourier space."
+exp_ikx_docstring = "yield an `exp.(1im .* k .* Δx)` function. A scaling of one means that the `shift_by` argument corresponds to `Δx` in integer pixels, but the term is in Fourier space. Note that the meaning of `scale` is different
+compared to the version in `IndexFunArray.jl`. Here the default scaling of 1.0 corresponds to the default scaling of ScaFT in `IndexFunArrays.jl`."
 
 """
     exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
