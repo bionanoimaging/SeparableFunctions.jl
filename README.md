@@ -1,4 +1,10 @@
 # SeparableFunctions.jl
+
+| **Documentation**                       | **Build Status**                          | **Code Coverage**               |
+|:---------------------------------------:|:-----------------------------------------:|:-------------------------------:|
+| [![][docs-stable-img]][docs-stable-url] [![][docs-dev-img]][docs-dev-url] | [![][CI-img]][CI-url] | [![][codecov-img]][codecov-url] |
+
+
 Calculates multidimensional functions faster by exploiting their separability.
 Often a function involves an operation such as a (complex) exponential which by itself is computationally relatively heavy. Yet a number of multidimenstional functions are separable, which means that they can be written as a product (or sum) of single-dimensional functions. A good example of a separable function is a Gaussian function:
 
@@ -25,3 +31,16 @@ Some functions have additional named arguments. E.g. `gaussian` has the addition
 Note that this nomenclature is in large parts identical to the package `IndexFunArrays.jl`.
 
 In general arguments can be supplied as single scalar values or vectors. If a scalar value is supplied, it will automatically be replicated as a vector. E.g. `sigma=10.0` for a  2-dimensional array will be interpreted as `sigma=(10.0, 10.0)`.
+
+
+[docs-dev-img]: https://img.shields.io/badge/docs-dev-pink.svg
+[docs-dev-url]: https://bionanoimaging.github.io/SeparableFunctions.jl/dev/
+
+[docs-stable-img]: https://img.shields.io/badge/docs-stable-darkgreen.svg
+[docs-stable-url]: https://bionanoimaging.github.io/SeparableFunctions.jl/stable/
+
+[CI-img]: https://github.com/bionanoimaging/SeparableFunctions.jl/actions/workflows/ci.yml/badge.svg
+[CI-url]: https://github.com/bionanoimaging/SeparableFunctions.jl/actions/workflows/ci.yml
+
+[codecov-img]: https://codecov.io/gh/bionanoimaging/SeparableFunctions.jl/branch/main/graph/badge.svg?token=6XWI1M1MPB
+[codecov-url]: https://codecov.io/gh/bionanoimaging/SeparableFunctions.jl

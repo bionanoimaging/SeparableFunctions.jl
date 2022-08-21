@@ -11,5 +11,6 @@ DefaultArrType = Array{DefaultResElType}
 
 include("general.jl")
 include("specific.jl")
+include("docstrings.jl")
 
 end # module SeparableFunctions
