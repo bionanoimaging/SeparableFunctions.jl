@@ -73,7 +73,47 @@ if false
 end
 
 # How is the performance for a propagator, which is only partially separable?
-@time p = propagator(Float32, sz) # 0.08 sec
-myrr2 = rr2_sep(sz)
-@time p2 = exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- (.+(myrr2...)))) .* 1f0)  # 0.036 sec 
-@time p2 = exp.(1f0im .* sqrt.(max.(0.0, 100.0 .- (.+(myrr2...)))) .* 1.0)  # 0.04 sec 
+sz = (2000,2000)
+sz = (200,200)
+@btime p = propagator(Float32, $sz); # 0.13 sec / 1.2 ms
+@btime myrr2 = rr2_sep($sz); # 3 µs  / 2 µs
+myrr2 = rr2_sep(sz);
+@btime @views myr = .*($myrr2...); # 1.9 ms(14 Mb) / 8.7 µs 
+myr = .*(myrr2...); # to have one
+f1(x) =  exp(1f0im * sqrt(max(0f0, 1f6 - x)) * 1f0)
+c = zeros(ComplexF32, sz);
+@btime @views c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
+@btime calc_radial_symm!($c, $f1); # 0.018 (0 Mb) / 166 µs
+@btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.0? (0 Mb) / 172 µs
+c = calc_radial_symm(Array{ComplexF32}, sz, f1); # 0.0? (0 Mb) / 172 µs
+@btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs
+myrr2lz = rr2_lz(sz);
+@btime c .= f1.($myrr2lz);  # 0.085 sec (0 Mb) / 800 µs
+@btime c .= $myr;  # 3 ms / 4.3 µs 
+
+
+sz = (2000,2000)
+a = rand(ComplexF32, sz...);
+b = rand(ComplexF32, sz...);
+@time copy_corners!(a); # 0.003 vs 0.02
+myrr2b = rr2_sep(sz);
+#myrr2b = rr2_lz(sz);
+# @time calc_radial_symm!(a, myrr2b, f1); # 0.009
+@time calc_radial_symm!(a, f1), myrr2b; # 0.020 (0 Mb)
+@btime calc_radial_symm!($a, $f1, $myrr2b); # 0.020 (0 Mb)
+@btime @views b .= transpose($a); # 0.009 ms  Too expensive?
+@btime @views b .= $a .* $a; # 0.002 ms  Too expensive?
+@vp a
+
+# @time p2 = exp.(1f0im .* sqrt.(max.(0.0, 100.0 .- (.+(myrr2...)))) .* 1.0);  # 0.04 sec . Double precision
+a = rand(sz...);
+@time b = a.+0; # 0.007
+@time b = a.*a; # 0.006
+@time b = a.^2; # 0.008
+@time b = sqrt.(a); # 0.009
+@time b = exp.(a); # 0.019
+@time b = cis.(a); # 0.036
+
+@time c = collect(exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- (i*i+j*j))) .* 1f0) for i=1:sz[1], j=1:sz[2]); # 0.11 sec
+@time c = map((x) -> exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- x)) .* 1f0), .+(myrr2...)); # 0.06
+
