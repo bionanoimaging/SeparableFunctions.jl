@@ -6,9 +6,7 @@ makedocs(modules = [SeparableFunctions],
          sitename = "SeparableFunctions.jl", 
          pages = Any[
             "SeparableFunctions.jl" => "index.md",
-            "Misc" => "misc.md",
-            "Distance Functions" => "distance.md",
-            "Window Functions" => "window.md",
+            "Concrete Separable Functions" => "distance.md",
          ]
         )
 

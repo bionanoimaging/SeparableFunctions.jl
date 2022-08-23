@@ -86,7 +86,19 @@ c = zeros(ComplexF32, sz);
 @btime @views c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
 @btime calc_radial_symm!($c, $f1); # 0.018 (0 Mb) / 166 µs
 @btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.022 (45 Mb) / 172 µs
-c = calc_radial_symm(Array{ComplexF32}, sz, f1); # 0.0? (0 Mb) / 172 µs
+c = calc_radial_symm(Array{ComplexF32}, sz, f1); 
+
+@btime $p = propagator(Float32, $sz); # 0.134 / 1.27 ms
+@btime $d = propagator_col($sz); # 0.022 s/ 0.15 ms
+
+p = propagator(Float32, sz); 
+d = propagator_col(sz); 
+@btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
+d = propagator_col(CuArray{ComplexF32}, sz); 
+@btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
+
+
+@vtp p d
 @btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs
 myrr2lz = rr2_lz(sz);
 @btime c .= f1.($myrr2lz);  # 0.085 sec (0 Mb) / 800 µs

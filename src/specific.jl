@@ -85,3 +85,29 @@ for F in generate_functions_expr()
     # lazy: A LazyArray representation is returned
     @eval export $(Symbol(F[1], :_lz))
 end 
+
+
+## Here some individual versions based on copy_corners! stuff. They only exist in the _cor version as they are not separable in X and Y.
+function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+# function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    k2_max = real(eltype(TA))(k_max .^2)
+    fac = eltype(TA)(4im * pi * Δz)
+    # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
+    f(r2) = exp(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * fac)
+    return calc_radial_symm(TA, sz, f; scale=scale); 
+end
+
+function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{N}
+    propagator_col(DefaultComplexArrType, sz; Δz=Δz, k_max=k_max, scale=scale)
+end
+
+function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
+    # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    k2_max = real(eltype(arr))(k_max .^2)
+    fac = eltype(arr)(4im * pi * Δz)
+    # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
+    f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    return calc_radial_symm!(arr, f; scale=scale); 
+end
+    
+    

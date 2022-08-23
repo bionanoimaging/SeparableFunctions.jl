@@ -52,6 +52,7 @@ function calc_radial_symm!(arr::AbstractArray{T,N}, fct; scale = one(real(T)), o
     # mymid = sz .÷ 2 .+1
     # reduces each of the vectors by two
 #    corners = ((sep[((1:size(sep,d)÷2+1) for d=1:lastindex(sep))...] for sep in myrr2sep)
+    # @show typeof(arr)
     @views arr[get_corner_ids(sz)...] .= fct.(.+(myrr2sep...))
     # @views arr[1:mymid[1],1:mymid[2]] .= fct.(myrr2sep[1][1:mymid[1],:] .+ myrr2sep[2][:,1:mymid[2]])
     copy_corners!(arr)
