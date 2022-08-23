@@ -9,7 +9,7 @@ end
 """
     copy_corners!(arr::AbstractArray{T,N}) where {T,N}
 
-replicates the first quadrant my several mirror operations over the entire array.
+replicates the first N-dimensional quadrant my several mirror operations over the entire array.
 The overwrites the entire array with the (mirrored) content of the first quadrant!
 
 #Arguments
@@ -17,15 +17,20 @@ The overwrites the entire array with the (mirrored) content of the first quadran
 """
 function copy_corners!(arr::AbstractArray{T,N}) where {T,N}
     sz = size(arr)
-    mymid = sz .÷ 2 .+1
     # mirror in the same line
-    @views arr[get_corner_ids(sz, shifted_dims=(true, false))...] .= arr[get_corner_ids(sz, inv_dims=(true, false))...]
-    # @views arr[mymid[1]+1:sz[1], 1:mymid[2]] .= arr[mymid[1]-1:-1:mymid[1]-mylength[1], 1:mymid[2]]
+    shifted_dims = (true, zeros(Bool,N-1)...)
+    inv_dims = shifted_dims
+    @views arr[get_corner_ids(sz, shifted_dims=shifted_dims)...] .= arr[get_corner_ids(sz, inv_dims=inv_dims)...]
     # this is a tiny bit faster without @view but consumes some memory
-    # mirror half to next dimension
-    arr[get_corner_ids(sz, full_dims=(true, false), shifted_dims=(false, true))...] .= arr[get_corner_ids(sz, full_dims=(true, false), inv_dims=(false, true))...]
-    # arr[:, mymid[2]+1:sz[2]] .= arr[:,mymid[2]-1:-1:mymid[2]-mylength[2]]
-    arr
+    for d=2:N
+        shifted_dims = Tuple((d == n) ? true : false for n=1:N)
+        inv_dims = shifted_dims
+        # the dimension which are already compied need to copied in full size.
+        full_dims = Tuple((n < d) ? true : false for n=1:N)
+        # mirror half to next dimension
+        arr[get_corner_ids(sz, full_dims=full_dims, shifted_dims=shifted_dims)...] .= arr[get_corner_ids(sz, full_dims=full_dims, inv_dims=inv_dims)...]
+    end
+    return arr
 end
 
 """

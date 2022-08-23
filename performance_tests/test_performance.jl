@@ -75,16 +75,17 @@ end
 # How is the performance for a propagator, which is only partially separable?
 sz = (2000,2000)
 sz = (200,200)
-@btime p = propagator(Float32, $sz); # 0.13 sec / 1.2 ms
+@btime p = propagator(Float32, $sz); # 0.14 sec / 1.2 ms
 @btime myrr2 = rr2_sep($sz); # 3 µs  / 2 µs
 myrr2 = rr2_sep(sz);
 @btime @views myr = .*($myrr2...); # 1.9 ms(14 Mb) / 8.7 µs 
 myr = .*(myrr2...); # to have one
 f1(x) =  exp(1f0im * sqrt(max(0f0, 1f6 - x)) * 1f0)
+# f2(x) = x # just for checking
 c = zeros(ComplexF32, sz);
 @btime @views c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
 @btime calc_radial_symm!($c, $f1); # 0.018 (0 Mb) / 166 µs
-@btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.0? (0 Mb) / 172 µs
+@btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.022 (45 Mb) / 172 µs
 c = calc_radial_symm(Array{ComplexF32}, sz, f1); # 0.0? (0 Mb) / 172 µs
 @btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs
 myrr2lz = rr2_lz(sz);
