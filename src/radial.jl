@@ -44,7 +44,7 @@ function copy_corners!(arr::AbstractArray{T,N}) where {T,N}
 end
 
 function get_real_arr_type(::Type{TA}) where {TA}
-    typeof(similar(TA(undef, Tuple(zeros(Int, ndims(TA)))), real(eltype(TA))))
+    typeof(similar(TA(undef, ntuple(x->0, ndims(TA))), real(eltype(TA))))
 end
  
 """
