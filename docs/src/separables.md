@@ -11,6 +11,9 @@ gaussian_sep
 normal_col
 normal_lz
 normal_sep
+ramp_col
+ramp_lz
+ramp_sep
 rr2_col
 rr2_lz
 rr2_sep

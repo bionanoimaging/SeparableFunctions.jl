@@ -88,26 +88,61 @@ end
 
 
 ## Here some individual versions based on copy_corners! stuff. They only exist in the _cor version as they are not separable in X and Y.
+"""
+    propagator_col([]::Type{TA},] sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+
+generates a propagator for propagating optical fields via exp(i kz Δz) with kz=sqrt(k0^2-kx^2-ky^2). The k-space radius is stated by
+k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./ (2 max.(sz ./ 2, 1))).
+
+#Arguments
++ `TA`:     type of the array to generate. E.g. Array{Float64} or CuArray{Float32}.
++ `sz`:     size of the array to generate.  If a 3rd dimension is present, a stack a propagators is returned, one for each multiple of Δz.
++ `Δz`:     distance in Z to propagate per slice.
++ `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
++ `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
+"""
 function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
 # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
-    k2_max = real(eltype(TA))(k_max .^2)
-    fac = eltype(TA)(4im * pi * Δz)
-    # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
-    f(r2) = exp(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * fac)
-    return calc_radial_symm(TA, sz, f; scale=scale); 
+    if length(sz) > 3
+        error("propagators are only allowed up to the third dimension. If you need to propagate several stacks, use broadcasting.")
+    end
+    arr = TA(undef, sz)
+    propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale) 
 end
 
 function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{N}
     propagator_col(DefaultComplexArrType, sz; Δz=Δz, k_max=k_max, scale=scale)
 end
 
+"""
+    propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+
+generates a propagator for propagating optical fields via exp(i kz Δz) with kz=sqrt(k0^2-kx^2-ky^2). The k-space radius is stated by
+k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./ (2 max.(sz ./ 2, 1))).
+
+#Arguments
++ `arr`:    the array to fill with propagators. If a 3rd dimension is present, a stack a propagators is returned, one for each multiple of Δz.
++ `Δz`:     distance in Z to propagate per slice.
++ `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
++ `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
+"""
 function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
     # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
     k2_max = real(eltype(arr))(k_max .^2)
     fac = eltype(arr)(4im * pi * Δz)
     # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
     f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
-    return calc_radial_symm!(arr, f; scale=scale); 
+    if length(size(arr)) < 3 || sz[3] == 1
+        return calc_radial_symm!(arr, f; scale=scale); 
+    else
+        zmid = size(sz,3)÷2+1
+        calc_radial_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
+        for z=1:size(sz,3)
+            if z != zmid+1
+                arr[:,:,z] .= (z-zmid) .* (@view arr[:,:,zmid+1])
+            end
+        end
+    end
 end
     
     

@@ -6,8 +6,8 @@ makedocs(modules = [SeparableFunctions],
          sitename = "SeparableFunctions.jl", 
          pages = Any[
             "SeparableFunctions.jl" => "index.md",
-            "Concrete Separable Functions" => "distance.md",
+            "Concrete Separable Functions" => "separables.md",
          ]
         )
 
-deploydocs(repo = "github.com/bionanoimaging/SeparableFunctions.jl.git", devbranch="master")
+deploydocs(repo = "github.com/bionanoimaging/SeparableFunctions.jl.git", devbranch="main")

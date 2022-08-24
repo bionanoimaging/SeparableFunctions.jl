@@ -70,6 +70,10 @@ if false
     CUDA.@time c_sep = gaussian_sep(CuArray{Float32}, sz, sigma=sigma) 
     CUDA.@time c_my_gaussian2 = .*(c_sep...)  # 2 ms (GPU) vs 2 ms (CPU) # apply the separable collection
     CUDA.@time c_my_gaussian2 .= .*(c_sep...)  # 2 ms (GPU) vs 1 ms (CPU) # apply the separable collection in place. No allocation
+
+    CUDA.@time d = propagator_col(CuArray{ComplexF32}, sz); # 0.008 s
+    d = propagator_col(CuArray{ComplexF32}, sz); 
+    CUDA.@time d = propagator_col!(d); # 0.008 (no allocation)
 end
 
 # How is the performance for a propagator, which is only partially separable?
@@ -94,7 +98,9 @@ c = calc_radial_symm(Array{ComplexF32}, sz, f1);
 p = propagator(Float32, sz); 
 d = propagator_col(sz); 
 @btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
-d = propagator_col(CuArray{ComplexF32}, sz); 
+
+rr2_sep(CuArray{Float32}, (4,4,4))
+
 @btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
 
 
