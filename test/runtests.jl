@@ -63,4 +63,21 @@ end
     test_fct(Float32, (mysinc, sinc_col, sinc_lz, sinc_sep, *), sz; scale=scale);
 end
 
+function test_copy_corners(sz)
+    q = copy_corners!(reshape(collect(1:prod(sz)),sz), speedup_last_dim=false);
+    w = copy_corners!(reshape(collect(1:prod(sz)),sz), speedup_last_dim=true);
+    @test all(w .== q)
+end
+
+@testset "copy_corners" begin
+    test_copy_corners((4,4))
+    test_copy_corners((4,5))
+    test_copy_corners((5,4))
+    test_copy_corners((3,4,5))
+    test_copy_corners((4,6,5))
+    test_copy_corners((3,5,4))
+    test_copy_corners((1,1,5))
+    test_copy_corners((3,4,1))
+end
+
 return

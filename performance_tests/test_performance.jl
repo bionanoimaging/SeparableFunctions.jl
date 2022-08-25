@@ -93,16 +93,24 @@ c = zeros(ComplexF32, sz);
 c = calc_radial_symm(Array{ComplexF32}, sz, f1); 
 
 @btime $p = propagator(Float32, $sz); # 0.134 / 1.27 ms
-@btime $d = propagator_col($sz); # 0.022 s/ 0.15 ms
+d = propagator_col(sz); 
+@btime $d = propagator_col($sz); # 0.018 s/ 0.15 ms
 
 p = propagator(Float32, sz); 
-d = propagator_col(sz); 
-@btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
+@btime $d = propagator_col!($d); # 0.0145 s/ 0.15 ms
 
 rr2_sep(CuArray{Float32}, (4,4,4))
 
 @btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
 
+a = rand(100,100,100);
+@btime @inbounds @views $a[:,:,100:-1:60] .= $a[:,:,10:50]; # 0.836ms
+@btime @inbounds @views $a[100*100*100:-1:60*100*100] .= $a[10*100*100:50*100*100]; # 0.126ms
+
+a = rand(2000,2000);
+@btime @inbounds @views $a[:,2000:-1:1100] .= $a[:,1:901]; # 3.25 ms
+@btime @inbounds @views $a[2000*2000:-1:1100*2000] .= $a[1*2000:2000*901]; # 1 ms
+@btime copy_corners!($a); # 7 ms vs. 1.859 ms
 
 @vtp p d
 @btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs

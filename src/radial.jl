@@ -24,14 +24,23 @@ The overwrites the entire array with the (mirrored) content of the first quadran
 
 #Arguments
 + `arr`:    The array in which the copy operations are performed
++ `speedup_last_dim=true`:  if `true` a one-dimensional assignment trick is used for the last non-singleton dimension.
 """
-function copy_corners!(arr::AbstractArray{T,N}) where {T,N}
+function copy_corners!(arr::AbstractArray{T,N}; speedup_last_dim=true) where {T,N}
     sz = size(arr)
     # mirror in the same line
     shifted_dims = (true, zeros(Bool,N-1)...)
     inv_dims = shifted_dims
     @views arr[get_corner_ranges(sz, shifted_dims=shifted_dims)...] .= arr[get_corner_ranges(sz, inv_dims=inv_dims)...]
-    for d=2:N
+    last_dim = findlast(sz .> 1)
+    do_speedup_last_dim = let # speedup makes no sense if the last non-singleton dim has only 2 dimensions
+        if sz[last_dim] > 2
+            speedup_last_dim
+        else
+            false
+        end
+    end
+    for d=2:(do_speedup_last_dim ? last_dim-1 : last_dim)
         shifted_dims = Tuple((d == n) ? true : false for n=1:N)
         inv_dims = shifted_dims
         # the dimension which are already compied need to copied in full size.
@@ -40,10 +49,47 @@ function copy_corners!(arr::AbstractArray{T,N}) where {T,N}
         # on CPU this is a tiny bit faster without @view but consumes some memory, but on GPU there is a big advantage with the @views
         @views arr[get_corner_ranges(sz, full_dims=full_dims, shifted_dims=shifted_dims)...] .= arr[get_corner_ranges(sz, full_dims=full_dims, inv_dims=inv_dims)...]
     end
+    if do_speedup_last_dim
+        copy_last_dim!(arr)
+    end
     return arr
 end
 
-function get_real_arr_type(::Type{TA}) where {TA}
+"""
+    copy_last_dim(arr::AbstractArray{T,N}) where{T,N}
+
+mirrors the last dimension exploiting the 1D-nature of the trailing dimension using 1D indexing of the ND array.
+However even-size dimensions need special treatment.
+"""
+function copy_last_dim!(arr::AbstractArray{T,N}) where{T,N}
+    sz =size(arr)
+    mid_pos = sz.÷2 .+1
+    linear = LinearIndices(arr)
+    lin_mid = linear[mid_pos...]
+    lin_size = linear[sz...] - lin_mid
+    # 1D mirror-copy irgnoring the mistakes:  
+    @views arr[lin_mid+1:end] .= arr[lin_mid-1:-1:lin_mid-lin_size]
+    dims = length(sz)
+    if any(iseven.(sz[1:end-1]))
+        dim_size = sz .- mid_pos
+        for d=1:dims-1
+            if iseven(sz[d])
+                colons = ((d==nd) ? 1 : Colon() for nd = 1:dims-1)
+                # @show collect(colons)
+                @views arr[colons..., mid_pos[dims]+1:end] .= arr[colons..., mid_pos[dims]-1:-1:mid_pos[dims]-dim_size[dims]]
+                # fix the middle slice (only needed for dimensions > 2)
+                if dims>2
+                    ranges_from = ((d==nd) ? 1 : mid_pos[nd]-1:-1:mid_pos[nd]-dim_size[nd] for nd = 1:dims-1)
+                    ranges_to = ((d==nd) ? 1 : mid_pos[nd]+1:sz[nd] for nd = 1:dims-1)
+                    @views arr[ranges_to..., mid_pos[dims]] .= arr[ranges_from..., mid_pos[dims]]
+                end
+            end
+        end
+    end
+    arr
+end
+
+function get_real_arr_type(::Type{TA}) where {TA<:AbstractArray}
     typeof(similar(TA(undef, ntuple(x->0, ndims(TA))), real(eltype(TA))))
 end
  
