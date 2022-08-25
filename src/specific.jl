@@ -129,9 +129,11 @@ k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./
 function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
     # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
     k2_max = real(eltype(arr))(k_max .^2)
-    fac = eltype(arr)(4im * pi * Δz)
+    # fac = eltype(arr)(4im * pi * Δz)
     # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
-    f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    # f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    fac = eltype(arr)(4pi * Δz)
+    f(r2) = cis(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
     if length(size(arr)) < 3 || sz[3] == 1
         return calc_radial_symm!(arr, f; scale=scale); 
     else

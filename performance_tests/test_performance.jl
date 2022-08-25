@@ -94,10 +94,10 @@ c = calc_radial_symm(Array{ComplexF32}, sz, f1);
 
 @btime $p = propagator(Float32, $sz); # 0.134 / 1.27 ms
 d = propagator_col(sz); 
-@btime $d = propagator_col($sz); # 0.018 s/ 0.15 ms
+@btime $d = propagator_col($sz); # 0.016 s/ 0.15 ms
 
 p = propagator(Float32, sz); 
-@btime $d = propagator_col!($d); # 0.0145 s/ 0.15 ms
+@btime $d = propagator_col!($d); # 0.0116 s/ 0.15 ms
 
 rr2_sep(CuArray{Float32}, (4,4,4))
 
@@ -111,6 +111,24 @@ a = rand(2000,2000);
 @btime @inbounds @views $a[:,2000:-1:1100] .= $a[:,1:901]; # 3.25 ms
 @btime @inbounds @views $a[2000*2000:-1:1100*2000] .= $a[1*2000:2000*901]; # 1 ms
 @btime copy_corners!($a); # 7 ms vs. 1.859 ms
+
+# lets test if a sincos(phi) is maybe faster than exp.(i phi)
+sz = (2000,2000)
+a = Float32.(2pi .* rand(sz...));
+function cis_fast(phi::T) where {T<:Real}
+    complex(sincos(T(pi/2) .- phi)...)
+end
+r = zeros(ComplexF32, sz);
+q = myexp.(a); # 60 ms / 49.7 ms (in place)
+w = exp.(1im .* a); # 77 ms / 70 ms
+z = cis.(a); # 58 ms / 51.92
+maximum(abs.(q.-w))
+maximum(abs.(q.-z))
+@btime $r .= cis_fast.($a); # 60 ms / 49.7 ms (in place)  / 42 ms (Float32)
+@btime $r .= exp.(1im .* $a); # 77 ms / 70 ms / 63 ms
+@btime $r .= cis.($a); # 58 ms / 51.92 / 46 ms
+b = a .+ 0.1f0im;
+@btime $r .= cis.($b); # 58 ms / 51.92 / 46 ms / 61 (complex input)
 
 @vtp p d
 @btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs
