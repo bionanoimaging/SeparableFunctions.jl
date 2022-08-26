@@ -42,7 +42,7 @@ julia> my_gaussian = gaussian_col((6,5); sigma=sigma, pos=pos)
 gaussian_col
 
 """
-gaussian_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -52,7 +52,7 @@ $(returns_lz)
 gaussian_lz
 
 """
-gaussian_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -96,7 +96,7 @@ $(returns_lz)
 normal_lz
 
 """
-normal_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -168,7 +168,7 @@ julia> my_sinc = sinc_col((6,5); pos=pos)
 sinc_col
 
 """
-sinc_lz([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_lz([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_lz)
@@ -209,7 +209,7 @@ julia> my_box = box_col((6,5); pos=pos)
 box_col
 
 """
-box_lz([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_lz([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -232,7 +232,7 @@ box_sep
 ramp_docstring = "creates an N-dimensional ramp along the gradient-direction defined by `slope`. Note that this disagrees with the nomenclature of the ramp-function defined in `IndexFunArrays.jl`."
 
 """
-ramp_col([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_col([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -252,7 +252,7 @@ julia> my_ramp = ramp_col((6,5); slope=(0.0,0.5), pos=pos)
 ramp_col
 
 """
-ramp_lz([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_lz([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -262,7 +262,7 @@ $(returns_lz)
 ramp_lz
 
 """
-ramp_sep([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_sep([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
