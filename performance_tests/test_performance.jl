@@ -133,6 +133,25 @@ maximum(abs.(p .- p2)) ./ maximum(abs.(p))
 # r2 = rr2_sep(sz, scale=xy_scale, offset=(10, 20)) # , wraps
 @vt p p2 p.-p2
 
+# compare with rr2 and 
+sz=(1000,1000)
+qq2(index) = sum(Tuple(index));
+
+@info "Compare Cartesian with rr2 and rr2_sep"
+# 1.334 ms, 0 bytes
+@btime $y .= ($qq2).(CartesianIndices($x)) .+ sqrt.(1.2.*($qq2).(CartesianIndices($x)).*($qq2).(CartesianIndices($x)));
+@btime $y .= ($qq2).(CartesianIndices($x)) .+ sqrt.(1.2.*($qq2).(CartesianIndices($x)).*($qq2).(CartesianIndices($x)));
+
+@btime $y .= rr2($x) .+ sqrt.(1.2.*rr2($x).*rr2($x)); # 1.96 ms, 1.64 kiB
+r2_sep = rr2_sep(sz)
+@btime $y .= .+($r2_sep...) .+ sqrt.(1.2.* .+($r2_sep...) .* .+($r2_sep...)); # 2.45 ms, 576 bytes
+@btime $y[:] .= .+($r2_sep...)[:] .+ sqrt.(1.2.* .+($r2_sep...)[:] .* .+($r2_sep...)[:]); # 5.08 ms, 576 bytes
+r2 = .+(r2_sep...); 
+@btime $y .= $r2 .+ sqrt.(1.2.* $r2 .* $r2); # 1.314 ms, 0 bytes
+r2_lz = rr2_lz(sz);
+@btime $y .= r2_lz .+ sqrt.(1.2.* r2_lz .* r2_lz); # 22.537 ms 384 bytes
+
+
 q = myexp.(a); # 60 ms / 49.7 ms (in place)
 w = exp.(1im .* a); # 77 ms / 70 ms
 z = cis.(a); # 58 ms / 51.92
