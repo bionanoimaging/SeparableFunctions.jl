@@ -147,4 +147,42 @@ function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.
     end
 end
     
+"""
+    phase_kz_col!(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+
+Calculates a propagation phase (without the 2pi factor!) for a given z-position, which can be defined via a 3rd entry in the `offset` supplied to the function.
+By default, Nyquist sampling it is assumed such that the lateral k_xy corresponds to the XY border in frequency space at the edge 
+of the Ewald circle.
+However, via the xy `scale` entries the k_max can be set appropriately. The propagation equation uses
+offset[3] .* sqrt.(1-kxy_rel^2) as the propagation phase. Therefore the Z-propagation distance (offset[3]) has to be specified in 
+units of the wavelength in the medium (`λ = n*λ₀`).
+Note that since the phase is normalized to 1 instead of 2pi, you need to use this phase in the following sense: `cispi.(2.*phase_kz(...))`.
+
+#Arguments
++ `arr`:    the array to fill with propagators. If a 3rd dimension is present, a stack a propagators is returned, one for each multiple of Δz.
++ `Δz`:     distance in Z to propagate per slice.
++ `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
++ `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
+"""
+function phase_kz_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
+    # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    k2_max = real(eltype(arr))(k_max .^2)
+    # fac = eltype(arr)(4im * pi * Δz)
+    # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
+    # f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    fac = eltype(arr)(4pi * Δz)
+    f(r2) = cis(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    if length(size(arr)) < 3 || sz[3] == 1
+        return calc_radial_symm!(arr, f; scale=scale); 
+    else
+        zmid = size(sz,3)÷2+1
+        calc_radial_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
+        for z=1:size(sz,3)
+            if z != zmid+1
+                arr[:,:,z] .= (z-zmid) .* (@view arr[:,:,zmid+1])
+            end
+        end
+    end
+end
+    
     

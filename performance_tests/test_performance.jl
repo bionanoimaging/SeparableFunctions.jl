@@ -114,19 +114,21 @@ a = rand(2000,2000);
 
 # lets test if a sincos(phi) is maybe faster than exp.(i phi)
 sz = (2000,2000)
-a = Float32.(2pi .* rand(sz...));
+a = Float32.((100.0-50.0) .* 2pi .* rand(sz...));
 function cis_fast(phi::T) where {T<:Real}
     complex(sincos(T(pi/2) .- phi)...)
 end
 r = zeros(ComplexF32, sz);
+@btime $r .= cis_fast.($a); # 60 ms / 49.7 ms (in place)  / 42 ms (Float32)
+@btime $r .= cis.($a); # 58 ms / 51.92 / 46 ms
+
 q = myexp.(a); # 60 ms / 49.7 ms (in place)
 w = exp.(1im .* a); # 77 ms / 70 ms
 z = cis.(a); # 58 ms / 51.92
 maximum(abs.(q.-w))
 maximum(abs.(q.-z))
-@btime $r .= cis_fast.($a); # 60 ms / 49.7 ms (in place)  / 42 ms (Float32)
+
 @btime $r .= exp.(1im .* $a); # 77 ms / 70 ms / 63 ms
-@btime $r .= cis.($a); # 58 ms / 51.92 / 46 ms
 b = a .+ 0.1f0im;
 @btime $r .= cis.($b); # 58 ms / 51.92 / 46 ms / 61 (complex input)
 
