@@ -7,9 +7,12 @@ version = "0.1.0"
 LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 
+[compat]
+NDTools = "0.5"
+
 [extras]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test", "IndexFunArrays"]
