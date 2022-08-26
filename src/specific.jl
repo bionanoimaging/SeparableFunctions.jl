@@ -115,7 +115,7 @@ function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (ma
 end
 
 """
-    propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    propagator_col(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
 
 generates a propagator for propagating optical fields via exp(i kz Δz) with kz=sqrt(k0^2-kx^2-ky^2). The k-space radius is stated by
 k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./ (2 max.(sz ./ 2, 1))).
@@ -125,7 +125,7 @@ k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./
 + `Δz`:     distance in Z to propagate per slice.
 + `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
 + `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
-"""
+"""    
 function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
     # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
     k2_max = real(eltype(arr))(k_max .^2)
@@ -164,14 +164,27 @@ Note that since the phase is normalized to 1 instead of 2pi, you need to use thi
 + `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
 + `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
 """
-function phase_kz_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f0, scale=0.5f0 ./ (max.(size(arr) ./ 2, 1))) where{T, N}
+function phase_kz_col(::Type{TA}, sz::NTuple{N, Int}; k_max=1f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    if length(sz) > 3
+        error("phase_kz are only allowed up to the third dimension. If you need to propagate several stacks, use broadcasting.")
+    end
+    arr = TA(undef, sz)
+    phase_kz_col!(arr; k_max=k_max, scale=scale) 
+end
+    
+function phase_kz_col!(arr::AbstractArray{T,N}; k_max=1.0f0, scale=T(0.5 ./ (max.(size(arr) ./ 2), 1))) where{T, N}
     # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
-    k2_max = real(eltype(arr))(k_max .^2)
+    # if any(offset[1:2] .!= size(arr)[1:2].÷2 .+1)
+    #     error("offset[1:2] needs to be size(arr)[1:2].÷2 .+1 to preserve radial symmetry for phase_kz_col().")
+    # end
+    RT = real(eltype(arr))
+    # Δz= 1 # length(offset) > 2 ? RT(offset[3]) : one(RT)
+    k2_max = RT(k_max .^2)
     # fac = eltype(arr)(4im * pi * Δz)
     # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
     # f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
-    fac = eltype(arr)(4pi * Δz)
-    f(r2) = cis(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
+    # fac = RT(Δz)
+    f(r2) = sqrt(max(zero(real(eltype(arr))),k2_max - r2)) # * fac
     if length(size(arr)) < 3 || sz[3] == 1
         return calc_radial_symm!(arr, f; scale=scale); 
     else
@@ -184,5 +197,7 @@ function phase_kz_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.5f
         end
     end
 end
-    
-    
+
+function phase_kz_col(sz::NTuple{N, Int}; k_max=1.0f0, scale=0.5 ./ (max.(sz ./ 2, 1))) where{N}
+    phase_kz_col(DefaultArrType, sz; k_max=k_max, scale=scale)
+end

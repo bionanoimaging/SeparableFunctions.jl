@@ -113,14 +113,25 @@ a = rand(2000,2000);
 @btime copy_corners!($a); # 7 ms vs. 1.859 ms
 
 # lets test if a sincos(phi) is maybe faster than exp.(i phi)
-sz = (2000,2000)
+sz = (123,1,130,4)
+sz = (2230,1,2300,4)
 a = Float32.((100.0-50.0) .* 2pi .* rand(sz...));
-function cis_fast(phi::T) where {T<:Real}
-    complex(sincos(T(pi/2) .- phi)...)
-end
-r = zeros(ComplexF32, sz);
-@btime $r .= cis_fast.($a); # 60 ms / 49.7 ms (in place)  / 42 ms (Float32)
-@btime $r .= cis.($a); # 58 ms / 51.92 / 46 ms
+@btime @views $a[:, 1,:,1:2] .= $a[:, 1,:,3:4]; # 13.6 µs
+@btime @views $a[:, 1:1,:,1:2] .= $a[:, 1:1,:,3:4]; # 13.8 µs
+@btime @views $a[:, :,:,1:2] .= $a[:, :,:,3:4]; # 7.5 µs
+b = reshape(a,(size(a,1)*size(a,2)*size(a,3),4));
+@btime @views $b[:,1:2] .= $b[:,3:4]; # 3.2 ms / 17.8 µs
+
+sz=(2000,2000)
+k_max_rel = 0.5
+xy_scale = 2 ./ (k_max_rel .* sz[1:2])
+p = collect(phase_kz(sz, scale=xy_scale));
+p2 = phase_kz_col(sz, scale=xy_scale);
+maximum(abs.(p .- p2)) ./ maximum(abs.(p))
+@btime p = collect(phase_kz($sz, scale=xy_scale)); # 12 ms , offset=(10.0 20.0)
+@btime p2 = phase_kz_col($sz, scale=xy_scale); # 3.4 ms , wraps
+# r2 = rr2_sep(sz, scale=xy_scale, offset=(10, 20)) # , wraps
+@vt p p2 p.-p2
 
 q = myexp.(a); # 60 ms / 49.7 ms (in place)
 w = exp.(1im .* a); # 77 ms / 70 ms

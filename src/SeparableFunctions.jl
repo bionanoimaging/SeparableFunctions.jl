@@ -29,7 +29,8 @@ using NDTools, LazyArrays
 
 export separable_view, separable_create
 export gaussian_sep, gaussian_sep_lz
-export propagator_col, propagator_col!, copy_corners!
+export copy_corners!
+export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!
 
 export calc_radial_symm!, calc_radial_symm, get_corner_ranges
 

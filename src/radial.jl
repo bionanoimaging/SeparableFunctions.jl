@@ -94,7 +94,7 @@ function get_real_arr_type(::Type{TA}) where {TA<:AbstractArray}
 end
  
 """
-    calc_radial_symm!(arr::TA, fct; scale = one(real(T)), offset=size(arr).÷2 .+1, myrr2sep = rr2_sep(size(arr); scale=scale, offset=offset)) where {N,T}
+    calc_radial_symm!(arr::TA, fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
 
 evaluates the radial function `fct` over the entire array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
@@ -103,11 +103,10 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `arr`:    The array into which to evaluate the radial function 
 + `fct`:        The radial function of the squared radius, to be evaluate on the array coordinates. 
 
-+ `offset`:     the center of the symmetry (only used, if myrr2sep is not supplied by the user)
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm!(arr::TA, fct; scale = one(real(T)), offset=size(arr).÷2 .+1, myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=offset)) where {TA}
+function calc_radial_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
     sz = size(arr)
     # mymid = sz .÷ 2 .+1
     # reduces each of the vectors by two
@@ -120,7 +119,7 @@ end
 
 
 """
-    calc_radial_symm([::Type{TA},] sz::NTuple,  fct; scale = one(real(T)), offset=size(arr).÷2 .+1, myrr2sep = rr2_sep(size(arr); scale=scale, offset=offset)) where {N,T}
+    calc_radial_symm([::Type{TA},] sz::NTuple,  fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
 
 evaluates the radial function `fct` in a newly created array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
@@ -130,15 +129,14 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `sz`:         The size of the newly created array. 
 + `fct`:        The radial function of the squared radius, to be evaluate on the array coordinates. 
 
-+ `offset`:     the center of the symmetry (only used, if myrr2sep is not supplied by the user)
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), offset=sz.÷2 .+1, myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=offset)) where {TA}
+function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
     arr = TA(undef, sz)
     calc_radial_symm!(arr, fct; myrr2sep = myrr2sep)    
 end
 
-function calc_radial_symm(sz::NTuple, fct; scale = one(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=offset)) where {TA}
+function calc_radial_symm(sz::NTuple, fct; scale = one(real(eltype(DefaultArrType))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz .÷2 .+1)) 
     calc_radial_symm(DefaultArrType, sz, fct; myrr2sep = myrr2sep)    
 end
