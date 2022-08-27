@@ -84,11 +84,26 @@ sz = (200,200)
 myrr2 = rr2_sep(sz);
 @btime @views myr = .*($myrr2...); # 1.9 ms(14 Mb) / 8.7 µs 
 myr = .*(myrr2...); # to have one
+
+rng_start = .-(sz.÷2)
+rng_stop = rng_start .+ sz .-1
+rng = Tuple(sta:sto for (sta,sto) in zip(rng_start, rng_stop))
+ci = CartesianIndices(rng);
+# qq2(index) = sum(abs2.(Tuple(index))); # no difference
+
+qq2(index) = sum(Tuple(index).^2);
 f1(x) =  exp(1f0im * sqrt(max(0f0, 1f6 - x)) * 1f0)
 # f2(x) = x # just for checking
 c = zeros(ComplexF32, sz);
-@btime @views c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
-@btime calc_radial_symm!($c, $f1); # 0.018 (0 Mb) / 166 µs
+
+@btime @views $c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
+@btime calc_radial_symm!($c, $f1); # 0.014 (0 Mb) / 166 µs
+@btime propagator_col!($c); # 0.015 s/ 0.15 ms
+@btime @views $c .= f1.(qq2.($ci));  # 0.104 sec (48 bytes) 
+@btime @views $c .= f1.(.+($myrr2...));  # 0.051 ms (128 bytes)
+ci_sep = [CartesianIndices((rng[1],0:0)), CartesianIndices((0:0, rng[2]))]
+@btime @views $c .= f1.(qq2.($ci_sep[1]) .+ qq2.($ci_sep[2]));  # 0.104 sec (0 bytes) 
+
 @btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.022 (45 Mb) / 172 µs
 c = calc_radial_symm(Array{ComplexF32}, sz, f1); 
 
@@ -135,16 +150,38 @@ maximum(abs.(p .- p2)) ./ maximum(abs.(p))
 
 # compare with rr2 and 
 sz=(1000,1000)
-qq2(index) = sum(Tuple(index));
+qq2(index) = sum(Tuple(index).^2);
+rng_start = .-(sz.÷2)
+rng_stop = rng_start .+ sz .-1
+rng = Tuple(sta:sto for (sta,sto) in zip(rng_start, rng_stop))
+
+y = zeros(sz);
 
 @info "Compare Cartesian with rr2 and rr2_sep"
-# 1.334 ms, 0 bytes
-@btime $y .= ($qq2).(CartesianIndices($x)) .+ sqrt.(1.2.*($qq2).(CartesianIndices($x)).*($qq2).(CartesianIndices($x)));
-@btime $y .= ($qq2).(CartesianIndices($x)) .+ sqrt.(1.2.*($qq2).(CartesianIndices($x)).*($qq2).(CartesianIndices($x)));
+# 1.747, 0 bytes
+@btime $y .= ($qq2).(CartesianIndices($rng)) .+ sqrt.(1.2.*($qq2).(CartesianIndices($rng)).*($qq2).(CartesianIndices($rng)));
 
 @btime $y .= rr2($x) .+ sqrt.(1.2.*rr2($x).*rr2($x)); # 1.96 ms, 1.64 kiB
 r2_sep = rr2_sep(sz)
 @btime $y .= .+($r2_sep...) .+ sqrt.(1.2.* .+($r2_sep...) .* .+($r2_sep...)); # 2.45 ms, 576 bytes
+
+y[:,1] .= r2_sep[1] .+ sqrt.(1.2.* r2_sep[1] .* r2_sep[1]); # 2.45 ms, 576 bytes
+@btime for n=1:1000 
+    $y[:,n] .= $r2_sep[1] .+ sqrt.(1.2.* $r2_sep[1] .* $r2_sep[1]) 
+end; # 2.38 ms (336 KiB)
+
+@btime $y .= ($qq2).(CartesianIndices($rng)); # 159 µs
+@btime $y .= rr2(sz); # 940 µs
+r2_sep = rr2_sep(sz)
+@btime $y .= .+(r2_sep...); # 172 µs
+
+@info "rr2 based"
+y .= rr2(sz) .+ sqrt.(1.2.*rr2(sz).*rr2(sz));
+@info "CartesianIndices based"
+y .= (qq2).(CartesianIndices(rng)) .+ sqrt.(1.2.*(qq2).(CartesianIndices(rng)).*(qq2).(CartesianIndices(rng)));
+
+
+
 @btime $y[:] .= .+($r2_sep...)[:] .+ sqrt.(1.2.* .+($r2_sep...)[:] .* .+($r2_sep...)[:]); # 5.08 ms, 576 bytes
 r2 = .+(r2_sep...); 
 @btime $y .= $r2 .+ sqrt.(1.2.* $r2 .* $r2); # 1.314 ms, 0 bytes
