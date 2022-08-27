@@ -8,6 +8,7 @@ LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 
 [compat]
+NDTools = "0.5"
 LazyArrays = "0.22"
 
 [extras]
