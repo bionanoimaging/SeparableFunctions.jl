@@ -4,3 +4,4 @@ SeparableFunctions = "c8c7ead4-852c-491e-a42d-3d43bc74259e"
 
 [compat]
 Documenter = "0.26"
+NDTools = "0.5"
