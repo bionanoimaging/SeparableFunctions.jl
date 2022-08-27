@@ -9,6 +9,7 @@ NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 
 [compat]
 NDTools = "0.5"
+LazyArrays = "0.22"
 
 [extras]
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"

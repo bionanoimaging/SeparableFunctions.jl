@@ -1,5 +1,11 @@
 # SeparableFunctions.jl
 
+## SeparableFunctions Interface
+The abstract `SeparableFunctions` definition
+```@docs
+SeparableFunctions
+```
+
 Here you can find the docstrings of currently implemented functions.
 
 ```@docs
@@ -9,17 +15,10 @@ separable_view
 separable_create
 ```
 
+<!-- 
 ## SeparableFunctions Interface
 
-The abstract `SeparableFunctions` definition
 ```@docs
-SeparableFunctions
-```
-
-# Concrete separable examples
-Functions that are separable.
-
-<!-- ```@docs
 gaussian_col
 gaussian_lz
 gaussian_sep
@@ -45,10 +44,13 @@ exp_ikx_sep
 
 # Radial functions
 These functions are purely radial, in which case only a quadrant is computed and then copied.
-They are based on a separable view version of `rr2` but then continue to calculate on a grid.
+They are based on a separable view version of `rr2` but then continue to calculate on a corner
+of a grid, which is (as a last step) replicated and mirrored.
 ```@docs
 calc_radial_symm!
 calc_radial_symm
 propagator_col
 propagator_col!
+phase_kz_col
+phase_kz_col!
 ```
