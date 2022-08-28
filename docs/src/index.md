@@ -8,7 +8,8 @@ SeparableFunctions
 
 ## Generic Ways to Create Seperable and Radial Functions 
 ```@docs
-copy_corners!
+calculate_separables
 separable_view
 separable_create
+copy_corners!
 ```

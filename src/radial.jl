@@ -89,10 +89,6 @@ function copy_last_dim!(arr::AbstractArray{T,N}) where{T,N}
     arr
 end
 
-function get_real_arr_type(::Type{TA}) where {TA<:AbstractArray}
-    typeof(similar(TA(undef, ntuple(x->0, ndims(TA))), real(eltype(TA))))
-end
- 
 """
     calc_radial_symm!(arr::TA, fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
 
@@ -132,7 +128,7 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
+function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz.÷2 .+1)) where {TA}
     arr = TA(undef, sz)
     calc_radial_symm!(arr, fct; myrr2sep = myrr2sep)    
 end

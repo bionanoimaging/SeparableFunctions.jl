@@ -27,7 +27,7 @@ In general arguments can be supplied as single scalar values or vectors. If a sc
 module SeparableFunctions
 using NDTools, LazyArrays
 
-export separable_view, separable_create
+export calculate_separables, separable_view, separable_create
 export gaussian_sep, gaussian_sep_lz
 export copy_corners!
 export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!
@@ -38,6 +38,7 @@ DefaultResElType = Float32
 DefaultArrType = Array{DefaultResElType}
 DefaultComplexArrType = Array{complex(DefaultResElType)}
 
+include("utilities.jl")
 include("general.jl")
 include("specific.jl")
 include("radial.jl")

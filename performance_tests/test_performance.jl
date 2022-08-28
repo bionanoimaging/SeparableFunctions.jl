@@ -78,7 +78,7 @@ end
 
 # How is the performance for a propagator, which is only partially separable?
 sz = (2000,2000)
-sz = (200,200)
+# sz = (200,200)
 @btime p = propagator(Float32, $sz); # 0.14 sec / 1.2 ms
 @btime myrr2 = rr2_sep($sz); # 3 µs  / 2 µs
 myrr2 = rr2_sep(sz);
@@ -97,26 +97,23 @@ f1(x) =  exp(1f0im * sqrt(max(0f0, 1f6 - x)) * 1f0)
 c = zeros(ComplexF32, sz);
 
 @btime @views $c .= f1.($myr);  # 0.022 sec (0 Mb) / 354 µs
-@btime calc_radial_symm!($c, $f1); # 0.014 (0 Mb) / 166 µs
-@btime propagator_col!($c); # 0.015 s/ 0.15 ms
+@btime calc_radial_symm!($c, $f1); # 0.015 (20 KiB) / 166 µs
+@btime propagator_col!($c); # 0.013 s (20 KiB)/ 0.15 ms
 @btime @views $c .= f1.(qq2.($ci));  # 0.104 sec (48 bytes) 
 @btime @views $c .= f1.(.+($myrr2...));  # 0.051 ms (128 bytes)
 ci_sep = [CartesianIndices((rng[1],0:0)), CartesianIndices((0:0, rng[2]))]
-@btime @views $c .= f1.(qq2.($ci_sep[1]) .+ qq2.($ci_sep[2]));  # 0.104 sec (0 bytes) 
+@btime @views $c .= f1.(qq2.($ci_sep[1]) .+ qq2.($ci_sep[2]));  # 0.078 sec (0 bytes) 
 
-@btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.022 (45 Mb) / 172 µs
+@btime calc_radial_symm(Array{ComplexF32}, $sz, $f1); # 0.019 (30 Mb) / 172 µs
 c = calc_radial_symm(Array{ComplexF32}, sz, f1); 
 
+p = propagator(Float32, sz); 
 @btime $p = propagator(Float32, $sz); # 0.134 / 1.27 ms
 d = propagator_col(sz); 
 @btime $d = propagator_col($sz); # 0.016 s/ 0.15 ms
-
-p = propagator(Float32, sz); 
-@btime $d = propagator_col!($d); # 0.0116 s/ 0.15 ms
+@btime $d = propagator_col!($d); # 0.0116 s (28 KiB)/ 0.15 ms
 
 rr2_sep(CuArray{Float32}, (4,4,4))
-
-@btime $d = propagator_col!($d); # 0.017 s/ 0.15 ms
 
 a = rand(100,100,100);
 @btime @inbounds @views $a[:,:,100:-1:60] .= $a[:,:,10:50]; # 0.836ms
