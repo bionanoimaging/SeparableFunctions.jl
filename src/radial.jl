@@ -210,7 +210,8 @@ function radial_speedup_ifa(::Type{TA}, rfun, sz, args...; oversample=8f0, metho
     # using TA(parent(src)) below allows this to work with CUDA, but the problem is that warp removed the CuArray type.
     copy_corners!(arr,src=parent(src)) # the parent is needed to get rid of the offset-array nature
 end
-function radial_speedup_ifa(::Type{TA}, rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...) where {TA}
+
+function radial_speedup_ifa(rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...)
     radial_speedup_ifa(DefaultArrType, rfun, sz, args...; oversample=oversample, method=method, kwargs...) 
 end
 

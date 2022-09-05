@@ -80,4 +80,19 @@ end
     test_copy_corners((3,4,1))
 end
 
+@testset "radial speedup" begin
+    sz = (233,244)
+    f(r)=sinc(r/2f0)
+    res3 = f.(rr(sz))
+    res2 = radial_speedup(f, sz, oversample=8f0)
+    @test maximum(abs.(res3 .- res2)) < 1e-6  # Linear: 1e-3, quadratic: 1.4e-5, Cubic: 5e-7
+    res = calc_radial_symm(sz, f);
+    @test maximum(abs.(res .- res3)) < 1e-7
+
+    sigma = 50.0
+    res4 = gaussian_col(sz, sigma=sigma) 
+    res5 = radial_speedup_ifa(gaussian, sz; sigma=sigma) 
+    @test maximum(abs.(res4 .- res5)) < 1e-6
+end
+
 return
