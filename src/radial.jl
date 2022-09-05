@@ -236,6 +236,10 @@ function radial_speedup(::Type{TA}, rfun, sz, args...; oversample=8f0, method=BS
     function rad(pos)
         return SVector(1 + oversample * sqrt(sum(pos .* pos)))
     end
+    # super slow in CuArrays, due to _get_index calls:
+    # src = similar(myrad, sz.÷2 .+1)
+    # img = ImageTransformations.box_extrapolation(myrad; method=method)
+    # ImageTransformations.warp!(src, img, rad);
     src = warp(myrad, rad, axes_corner_only(sz); method=method);
     arr = similar(myrad, sz)
     # using TA(parent(src)) below allows this to work with CUDA, but the problem is that warp removed the CuArray type.
