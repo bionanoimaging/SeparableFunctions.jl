@@ -11,6 +11,7 @@ NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
+Interpolations = "0.14"
 LazyArrays = "0.22"
 NDTools = "0.5"
 
