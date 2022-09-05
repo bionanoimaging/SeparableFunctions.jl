@@ -4,12 +4,14 @@ authors = ["RainerHeintzmann <heintzmann@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
 LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
-NDTools = "0.5"
 LazyArrays = "0.22"
+NDTools = "0.5"
 
 [extras]
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"

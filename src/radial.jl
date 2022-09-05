@@ -26,12 +26,22 @@ The overwrites the entire array with the (mirrored) content of the first quadran
 + `arr`:    The array in which the copy operations are performed
 + `speedup_last_dim=true`:  if `true` a one-dimensional assignment trick is used for the last non-singleton dimension.
 """
-function copy_corners!(arr::AbstractArray{T,N}; speedup_last_dim=true) where {T,N}
+function copy_corners!(arr::AbstractArray{T,N}; src = nothing, speedup_last_dim=true) where {T,N}
     sz = size(arr)
+    if !isnothing(src)
+        arr[get_corner_ranges(sz)...] .= src
+    end
+    src = let 
+        if isnothing(src)
+            @views arr[get_corner_ranges(sz)...]
+        else
+            src
+        end
+    end
     # mirror in the same line
     shifted_dims = (true, zeros(Bool,N-1)...)
     inv_dims = shifted_dims
-    @views arr[get_corner_ranges(sz, shifted_dims=shifted_dims)...] .= arr[get_corner_ranges(sz, inv_dims=inv_dims)...]
+    @views arr[get_corner_ranges(sz, shifted_dims=shifted_dims)...] .= src[get_corner_ranges(sz, inv_dims=inv_dims)...]
     last_dim = findlast(sz .> 1)
     do_speedup_last_dim = let # speedup makes no sense if the last non-singleton dim has only 2 dimensions
         if sz[last_dim] > 2
@@ -90,7 +100,7 @@ function copy_last_dim!(arr::AbstractArray{T,N}) where{T,N}
 end
 
 """
-    calc_radial_symm!(arr::TA, fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
+    calc_radial2_symm!(arr::TA, fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
 
 evaluates the radial function `fct` over the entire array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
@@ -102,7 +112,7 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
+function calc_radial2_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
     sz = size(arr)
     # mymid = sz .÷ 2 .+1
     # reduces each of the vectors by two
@@ -115,7 +125,7 @@ end
 
 
 """
-    calc_radial_symm([::Type{TA},] sz::NTuple,  fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
+    calc_radial2_symm([::Type{TA},] sz::NTuple,  fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
 
 evaluates the radial function `fct` in a newly created array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
@@ -128,11 +138,109 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz.÷2 .+1)) where {TA}
+function calc_radial2_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz.÷2 .+1)) where {TA}
     arr = TA(undef, sz)
-    calc_radial_symm!(arr, fct; myrr2sep = myrr2sep)    
+    calc_radial2_symm!(arr, fct; myrr2sep = myrr2sep)    
 end
 
+function calc_radial2_symm(sz::NTuple, fct; scale = one(real(eltype(DefaultArrType))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz .÷2 .+1)) 
+    calc_radial2_symm(DefaultArrType, sz, fct; myrr2sep = myrr2sep)    
+end
+
+
+"""
+    calc_radial_symm!(arr::TA, fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
+
+evaluates the radial function `fct` over the entire array. The function needs to accept the radius as argument.
+The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
+
+#Arguments
++ `arr`:    The array into which to evaluate the radial function 
++ `fct`:        The function of the radius, to be evaluate on the array coordinates. 
++ `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
++ `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
+"""
+function calc_radial_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
+    calc_radial2_symm!(arr, (r2)->fct(sqrt(r2)); scale=scale, myrr2sep = myrr2sep)
+end
+
+"""
+    calc_radial_symm!([::Type{TA},] sz::NTuple,  fct; scale = one(real(T)), myrr2sep = rr2_sep(size(arr); scale=scale, offset=size(arr).÷2 .+1)) where {N,T}
+
+evaluates the radial function `fct` over the entire array. The function needs to accept the radius as argument.
+The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
+
+#Arguments
++ `TA`:         The array type for the newly created array. 
++ `sz`:         The size of the newly created array. 
++ `fct`:        The function of the radius, to be evaluate on the array coordinates. 
++ `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
++ `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
+"""
+function calc_radial_symm(::Type{TA}, sz::NTuple, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz.÷2 .+1)) where {TA}
+    calc_radial2_symm(TA, sz, (r2)->fct(sqrt(r2)); scale=scale, myrr2sep = myrr2sep)
+end
 function calc_radial_symm(sz::NTuple, fct; scale = one(real(eltype(DefaultArrType))), myrr2sep = rr2_sep(sz.÷2 .+1; scale=scale, offset=sz .÷2 .+1)) 
     calc_radial_symm(DefaultArrType, sz, fct; myrr2sep = myrr2sep)    
+end
+
+
+"""
+    radial_speedup_ifa([::Type(TA)], rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...)
+
+calculates a radially symmetric function on an array fast by using interpolation. This version is compatible with the arguments of
+generator functions as present in the package `IndexFunArrays.jl`. See `radial_speedup` for a more general version.
+Other interpolation `method`s are for example: BSpline(Cubic(Flat(OnGrid()))), BSpline(Cubic(Line(OnGrid()))), BSpline(Quadratic(Line(OnGrid()))), BSpline(Linear())
+# Arguments
++ `rfun`:   The radially symmetric function according to the standards as set in `IndexFunArrays.jl`. E.g. `gaussian`. The first argument is the size of the array to generate. 
++ `sz`:     size of the array to calculate
++ `args...`:    further arguments to hand over to `rfun`
++ `oversample`: defines how many times the pre-calculated functions values are oversampled.
++ `method`:     the interpolation method to use. 
++ `kwargs...`:    further keyword arguments to hand over to `rfun`
+"""
+function radial_speedup_ifa(::Type{TA}, rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...) where {TA}
+    pmax = ceil(Int, sqrt(sum(sz.*sz))*oversample)
+    myrad = TA(rfun((pmax,), args...; scale=1/(oversample*oversample), offset=(1,), kwargs...))
+    function rad(pos::SVector)
+        return SVector(1 + oversample * sqrt(sum(pos .* pos)))
+    end
+    src = warp(myrad, rad, axes_corner_only(sz); method=method); 
+    arr = similar(myrad, sz) 
+    # using TA(parent(src)) below allows this to work with CUDA, but the problem is that warp removed the CuArray type.
+    copy_corners!(arr,src=parent(src)) # the parent is needed to get rid of the offset-array nature
+end
+function radial_speedup_ifa(::Type{TA}, rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...) where {TA}
+    radial_speedup_ifa(DefaultArrType, rfun, sz, args...; oversample=oversample, method=method, kwargs...) 
+end
+
+"""
+    radial_speedup([::Type(TA)], rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...)
+
+calculates a radially symmetric function on an array fast by using interpolation. 
+Other interpolation `method`s are for example: BSpline(Cubic(Flat(OnGrid()))), BSpline(Cubic(Line(OnGrid()))), BSpline(Quadratic(Line(OnGrid()))), BSpline(Linear())
+See also `calc_radial_symm` which does not use interpolation and is faster for fairly simple functions.
+# Arguments
++ `::Type(TA)]`:    optionally the type of the array can be specified.
++ `rfun`:   The radial function `rfun(r)` with radius `r`, to calculate on the array.
++ `sz`:     size of the array to calculate
++ `args...`:    further arguments to hand over to `rfun`
++ `oversample`: defines how many times the pre-calculated functions values are oversampled.
++ `method`:     the interpolation method to use. 
++ `kwargs...`:    further keyword arguments to hand over to `rfun`
+"""
+function radial_speedup(::Type{TA}, rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...) where {TA}
+    pmax = ceil(Int, sqrt(sum(sz.*sz))*oversample)
+    myrad = rfun.(TA(0:pmax-1)/oversample, args...; kwargs...)
+    function rad(pos)
+        return SVector(1 + oversample * sqrt(sum(pos .* pos)))
+    end
+    src = warp(myrad, rad, axes_corner_only(sz); method=method);
+    arr = similar(myrad, sz)
+    # using TA(parent(src)) below allows this to work with CUDA, but the problem is that warp removed the CuArray type.
+    copy_corners!(arr,src=parent(src)) # the parent is needed to get rid of the offset-array nature
+end
+
+function radial_speedup(rfun, sz, args...; oversample=8f0, method=BSpline(Cubic(Line(OnGrid()))), kwargs...)
+    radial_speedup(DefaultArrType, rfun, sz, args...; oversample=oversample, method=method, kwargs...)
 end

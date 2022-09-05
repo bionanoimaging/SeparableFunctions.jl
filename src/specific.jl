@@ -135,10 +135,10 @@ function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.
     fac = eltype(arr)(4pi * Δz)
     f(r2) = cis(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
     if length(size(arr)) < 3 || sz[3] == 1
-        return calc_radial_symm!(arr, f; scale=scale); 
+        return calc_radial2_symm!(arr, f; scale=scale); 
     else
         zmid = size(sz,3)÷2+1
-        calc_radial_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
+        calc_radial2_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
         for z=1:size(sz,3)
             if z != zmid+1
                 arr[:,:,z] .= (z-zmid) .* (@view arr[:,:,zmid+1])
@@ -202,10 +202,10 @@ function phase_kz_col!(arr::AbstractArray{T,N}; k_max=1.0f0, scale=T(0.5 ./ (max
     # fac = RT(Δz)
     f(r2) = sqrt(max(zero(real(eltype(arr))),k2_max - r2)) # * fac
     if length(size(arr)) < 3 || sz[3] == 1
-        return calc_radial_symm!(arr, f; scale=scale); 
+        return calc_radial2_symm!(arr, f; scale=scale); 
     else
         zmid = size(sz,3)÷2+1
-        calc_radial_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
+        calc_radial2_symm!((@view arr[:,:,zmid+1]), f; scale=scale); 
         for z=1:size(sz,3)
             if z != zmid+1
                 arr[:,:,z] .= (z-zmid) .* (@view arr[:,:,zmid+1])
