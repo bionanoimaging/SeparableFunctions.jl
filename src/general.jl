@@ -34,14 +34,16 @@ julia> gauss_sep = calculate_separables(fct, (6,5), (0.5,1.0), pos = (0.1,0.2))
 function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
     idc = pick_n(1, scale) .* ((start[1]:start[1]+sz[1]-1) .- pick_n(1, pos))
+    # @show typeof(idc)
     all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz))
-    res = Tuple(reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), d, Val(N)) for d=1:N) # Vector{AT}()
+    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), d, Val(N)), N) # Vector{AT}()
     res[1] .= fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...)
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
     for d = 2:N
         idc = pick_n(d, scale) .* ((start[d]:start[d]+sz[d]-1) .- pick_n(d, pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
-        res[d] .= collect(reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N)))
+        res[d][:] .= fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...)
+        # res[d] .= reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N))
         # LazyArray representation of expression
         # push!(res, myaxis)
     end
