@@ -28,7 +28,7 @@ function generate_functions_expr()
         (:(gaussian), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
         (:(normal), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
         (:(sinc), :((x,sz) -> sinc(x)), Float32, *),
-        (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-2pi*shift_by/sz))), ComplexF32, *),
+        (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-typeof(x)(2pi)*shift_by/sz))), ComplexF32, *),
         (:(ramp), :((x,sz; slope) -> slope*x), Float32, +), # different meaning than IFA ramp
         (:(rr2), :((x,sz) -> (x*x)), Float32, +),
         (:(box), :((x,sz; boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *),

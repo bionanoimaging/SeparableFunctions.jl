@@ -1,5 +1,5 @@
 """
-    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
 
 creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
@@ -10,6 +10,7 @@ This function is used in `separable_view` and `separable_create`.
 + `fct`:    the function to calculate for each axis index (no need for broadcasting!) of this iterable of seperable axes. Note that the first arguments of `fct` have to be the index of this coordinate and the size of this axis. Any further `args` and `nargs` can follow. Often the second argument is not used but it still needs to be present.
 + `sz`:     the size of the result array (when appying the one-D axes)
 + `args`:   further arguments which are passed over to the function `fct`.
++ `dims`:   a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
 + `pos`:    a position shifting the indices passed to `fct` in relationship to the `offset`.
 + `offset`: specifying the center (zero-position) of the result array in one-based coordinates. The default corresponds to the Fourier-center.
 + `scale`:  multiplies the index before passing it to `fct`
@@ -31,18 +32,23 @@ julia> gauss_sep = calculate_separables(fct, (6,5), (0.5,1.0), pos = (0.1,0.2))
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
-    idc = pick_n(1, scale) .* ((start[1]:start[1]+sz[1]-1) .- pick_n(1, pos))
+    idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
-    all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz))
-    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), d, Val(N)), N) # Vector{AT}()
-    res[1] .= fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...)
+    valid_sz = sz[dims]
+    all_axes = (similar_arr_type(AT, dims=1))(undef, sum(valid_sz))
+    # allocate a contigous memory to be as cash-efficient as possible and dice it up below
+    res = ntuple((d) -> reorient((@view all_axes[1+sum(valid_sz[1:d])-sz[dims[d]]:sum(valid_sz[1:d])]), dims[d], Val(N)), lastindex(dims)) # Vector{AT}()
+    # @show kwarg_n(dims[1], kwargs)
+    # @show arg_n(dims[1], args)
+    # @show idc
+    res[1][:] .= fct.(idc, sz[dims[1]], arg_n(dims[1], args)...; kwarg_n(dims[1], kwargs)...)
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
-    for d = 2:N
-        idc = pick_n(d, scale) .* ((start[d]:start[d]+sz[d]-1) .- pick_n(d, pos))
+    for d = 2:lastindex(dims)
+        idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
-        res[d][:] .= fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...)
+        res[d][:] .= fct.(idc, sz[dims[d]], arg_n(dims[d], args)...; kwarg_n(dims[d], kwargs)...)
         # res[d] .= reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N))
         # LazyArray representation of expression
         # push!(res, myaxis)
@@ -50,8 +56,8 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; pos=
     return res
 end
 
-function calculate_separables(fct, sz::NTuple{N, Int}, args...; pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), kwargs...) where {N}
-    calculate_separables(DefaultArrType, fct, sz, args...; pos=pos, offset=offset, scale=scale, kwargs...)
+function calculate_separables(fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), kwargs...) where {N}
+    calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)
 end
 
 """
@@ -67,6 +73,7 @@ See the example below.
                   The first argument of this function is a Tuple corresponding the centered indices.
 + `sz`:           The size of the N-dimensional array to create
 + `args`...:      a list of arguments, each being an N-dimensional vector
++ `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
 + `operation`:    the separable operation connecting the separable dimensions
@@ -84,13 +91,13 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
  6.50731e-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operation = *, kwargs...) where {TA, N}
-    res = calculate_separables(TA, fct, sz, args...; kwargs...)
+function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, operation = *, kwargs...) where {TA, N}
+    res = calculate_separables(TA, fct, sz, args...; dims=dims, kwargs...)
     return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
 end
 
-function separable_view(fct, sz::NTuple{N, Int}, args...; operation = *, kwargs...) where {N}
-    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; operation=operation, kwargs...)
+function separable_view(fct, sz::NTuple{N, Int}, args...; dims=1:N, operation = *, kwargs...) where {N}
+    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; dims=dims, operation=operation, kwargs...)
 end
 
 """
@@ -104,6 +111,7 @@ See the example below.
                   The first argument of this function is a Tuple corresponding the centered indices.
 + `sz`:           The size of the N-dimensional array to create
 + `args`...:      a list of arguments, each being an N-dimensional vector
++ `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
 + `operation`:    the separable operation connecting the separable dimensions

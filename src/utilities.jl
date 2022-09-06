@@ -1,10 +1,15 @@
 """
     pick_n(n, v)
 
-picks the `n`th value of the vector v or the scalar v.
+picks the `n`th value of the vector v or return the scalar v.
 """
+function pick_n(n, v::Number)
+    v
+end
+
 function pick_n(n, v)
-    v[1+((n-1)%lastindex(v))]
+    v[n]
+    # v[1+((n-1)%lastindex(v))]
 end
 
 """ 
