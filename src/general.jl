@@ -32,7 +32,7 @@ julia> gauss_sep = calculate_separables(fct, (6,5), (0.5,1.0), pos = (0.1,0.2))
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; defaults=NamedTuple(), dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
     idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
@@ -43,12 +43,14 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims
     # @show kwarg_n(dims[1], kwargs)
     # @show arg_n(dims[1], args)
     # @show idc
-    res[1][:] .= fct.(idc, sz[dims[1]], arg_n(dims[1], args)...; kwarg_n(dims[1], kwargs)...)
+    extra_args = kwargs_to_args(defaults, kwarg_n(dims[1], kwargs))
+    res[1][:] .= fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
     for d = 2:lastindex(dims)
         idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
-        res[d][:] .= fct.(idc, sz[dims[d]], arg_n(dims[d], args)...; kwarg_n(dims[d], kwargs)...)
+        extra_args = kwargs_to_args(defaults, kwarg_n(dims[d], kwargs))
+        res[d][:] .= fct.(idc, sz[dims[d]], extra_args..., arg_n(dims[d], args)...)
         # res[d] .= reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N))
         # LazyArray representation of expression
         # push!(res, myaxis)

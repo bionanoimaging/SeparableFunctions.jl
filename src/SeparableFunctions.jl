@@ -36,6 +36,7 @@ export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!
 
 export calc_radial_symm!, calc_radial_symm, get_corner_ranges
 export radial_speedup, radial_speedup_ifa
+export kwargs_to_args
 
 DefaultResElType = Float32
 DefaultArrType = Array{DefaultResElType}

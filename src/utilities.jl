@@ -51,6 +51,28 @@ function kwarg_n(n, kwargs)
     (;zip(keys(kwargs), arg_n(n, values(kwargs)))...)
 end
 
+function kwargs_to_args(defaults, kwargs)
+    for k in keys(kwargs)
+        if !(k in keys(defaults))
+            @show defaults
+            error("unknown key word argument: $k, possible arguments are: $(defaults).")
+        end
+    end
+    res = []
+    for (k,v) in zip(keys(defaults), values(defaults))
+        if k in keys(kwargs)
+            if !isnothing(v) # do not submit this argument, if the default is `nothing`.
+                v = kwargs[k]
+                push!(res, v)
+            end
+        else
+            if !isnothing(v) # do not submit this argument, if the default is `nothing`.
+                push!(res, v)
+            end
+        end
+    end
+    Tuple(res)
+end
 
 # moved to NDTools:
 # """
