@@ -36,6 +36,7 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; defa
     start = 1 .- offset
     idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
+    dims = [dims...]
     valid_sz = sz[dims]
     all_axes = (similar_arr_type(AT, dims=1))(undef, sum(valid_sz))
     # allocate a contigous memory to be as cash-efficient as possible and dice it up below
