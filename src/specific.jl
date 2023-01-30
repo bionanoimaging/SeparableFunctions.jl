@@ -88,7 +88,7 @@ for F in generate_functions_expr()
     # separated: a vector of separated contributions is returned and the user has to combine them
     @eval export $(Symbol(F[1], :_sep))
     # lazy: A LazyArray representation is returned
-    @eval export $(Symbol(F[1], :_lz))
+    # @eval export $(Symbol(F[1], :_lz))
 end 
 
 
