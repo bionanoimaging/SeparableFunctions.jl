@@ -41,7 +41,7 @@ es = ones(ComplexF32, sz)
 @time es .*= SeparableFunctions.exp_ikx_lz(sz; shift_by=Δx); # 0.010
 @time tmp = exp_ikx_sep(sz, shift_by=Δx); # 0.00015
 @time es .*= .*(tmp...); # 0.006 # seems to be the best and also works in Cuda
-@time SeparableFunctions.mul_exp_ikx!(es; shift_by=Δx); # 0.01
+@time SeparableFunctions.mul_exp_ikx!(es; shift_by=Δx); # 0.011
 
 # @vtp e es
 @time r = collect(rr2(sz)); # 0.01
