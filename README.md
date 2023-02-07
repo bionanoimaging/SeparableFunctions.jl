@@ -8,7 +8,7 @@
 Calculates multidimensional functions faster by exploiting their separability.
 Often a function involves an operation such as a (complex) exponential which by itself is computationally relatively heavy. Yet a number of multidimenstional functions are separable, which means that they can be written as a product (or sum) of single-dimensional functions. A good example of a separable function is a Gaussian function:
 
-$G(x)=e^{\frac{\mathbf{r}}{2\sigma}}=e^{-(\frac{r_x -x}{2\sigma_x})^2} e^{-(\frac{r_y-y}{2\sigma_x})^2} e^{-(\frac{r_z-z}{2\sigma_z})^2}$
+$G(x)=e^{\frac{\mathbf{r}-\mathbf{r_0}}{2\sigma}}=e^{-(\frac{r_x -x_0}{2\sigma_x})^2} e^{-(\frac{r_y-y_0}{2\sigma_x})^2} e^{-(\frac{r_z-z_0}{2\sigma_z})^2}$
 
 In this package, multidimensional functions are computed by first calculating their single-dimensional values and then creating the final multidimensional result by an outer product. Since multiplications and the broadcasting mechanism of Julia are fast compared to the evaluation of the function at each multidimensional position, the final result is calculated faster. The typical speedup can be an order of magnitude.
 
