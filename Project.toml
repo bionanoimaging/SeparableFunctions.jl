@@ -13,7 +13,8 @@ Thunks = "490da00b-a60c-4ded-a4cf-df7cded56bfa"
 
 [compat]
 LazyArrays = "0.22"
-NDTools = "0.5.1"
+NDTools = "0.5"
+StaticArrays = "1"
 
 [extras]
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
