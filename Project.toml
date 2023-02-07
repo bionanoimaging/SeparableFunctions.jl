@@ -12,6 +12,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Thunks = "490da00b-a60c-4ded-a4cf-df7cded56bfa"
 
 [compat]
+Interpolations = "0.14"
 ImageTransformations = "0.9"
 LazyArrays = "0.22"
 NDTools = "0.5"
