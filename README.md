@@ -8,11 +8,12 @@
 Calculates multidimensional functions faster by exploiting their separability.
 Often a function involves an operation such as a (complex) exponential which by itself is computationally relatively heavy. Yet a number of multidimenstional functions are separable, which means that they can be written as a product (or sum) of single-dimensional functions. A good example of a separable function is a Gaussian function:
 
-$G(x)=e^{\frac{\mathbf{r}}{2\sigma}}=e^{\frac{r_x}{2\sigma_x}} e^{\frac{r_y}{2\sigma_x}} e^{\frac{r_z}{2\sigma_z}}$
+$G(x)=e^{\frac{\mathbf{r}-\mathbf{r_0}}{2\sigma}}=e^{-(\frac{r_x -x_0}{2\sigma_x})^2} e^{-(\frac{r_y-y_0}{2\sigma_x})^2} e^{-(\frac{r_z-z_0}{2\sigma_z})^2}$
 
 In this package, multidimensional functions are computed by first calculating their single-dimensional values and then creating the final multidimensional result by an outer product. Since multiplications and the broadcasting mechanism of Julia are fast compared to the evaluation of the function at each multidimensional position, the final result is calculated faster. The typical speedup can be an order of magnitude.
 
-The package offers a general way of calculating separable functions as well as a `LazyArrays` version of that function which can then be used inside other expressions.
+The package offers a general way of calculating separable functions as well as a `LazyArrays` version of that function which can then be used inside other expressions. Yet, these lazy versions are currently NOT recommended, since they are consistently slower that the separabel implementations. This is why the specific versions are currently also not exported.
+
 The non-lazy version should currently also work with `CUDA.jl`, however the `LazyArrays` version does not. To nevertheless use separable expressions in `CUDA.jl`, you can reside to externally applying the broadcast operator to the separable expression (see the `gaussian_sep` example below).
 
 The package further offers a number of predifined separable function implementations such as `gaussian_col()` collects a multidimensional array of a multidimensional Gaussian via a fast seperable implementation, `gaussian_lz()` yields a lazy representation via `LazyArrays` and `sep = gaussian_sep()` yields an iterable of separable pre-oriented vectors which can easily be mutually combined via `.*(sep...)`.

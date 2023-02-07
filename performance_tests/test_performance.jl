@@ -11,13 +11,13 @@ fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 
 # Test some predefined functions
 @time my_gaussian = gaussian_col(Array{Float64}, sz); # sigma=sigma
-@time my_gaussian = gaussian_lz(Array{Float64}, sz; sigma=sigma);
-@time my_gaussian = gaussian_lz(sz; sigma=sigma);
+@time my_gaussian = SeparableFunctions.gaussian_lz(Array{Float64}, sz; sigma=sigma);
+@time my_gaussian = SeparableFunctions.gaussian_lz(sz; sigma=sigma);
 @time q = collect(my_gaussian); # 0.002 sec
 
 @time my_normal = normal_col(Array{Float64}, sz); 
-@time my_normal = normal_lz(Array{Float64}, sz; sigma=sigma);
-@time my_normal = normal_lz(sz; sigma=sigma);
+@time my_normal = SeparableFunctions.normal_lz(Array{Float64}, sz; sigma=sigma);
+@time my_normal = SeparableFunctions.normal_lz(sz; sigma=sigma);
 @time q2 = collect(my_normal); # 
 @time sum(my_normal) # 0.0035. Does NOT allocate! But is not as accurate.
 my_sep = normal_sep(sz; sigma=sigma);
@@ -31,22 +31,28 @@ using IndexFunArrays
 @time gs = gaussian_col(sz, sigma=sigma); # 0.003
 # @vt g gs
 
+sz = (2000,1900)
 Δx = (1.1, 2.2) # ./ (pi .* sz)
+es = ones(ComplexF32, sz)
 @time e = collect(exp_ikx(sz, shift_by=Δx)); # 0.19
-@time e .= exp_ikx(sz, shift_by=Δx); # 0.10
+@time e .*= exp_ikx(sz, shift_by=Δx); # 0.10
 # @vp e
-@time es = exp_ikx_col(sz; shift_by=Δx); # 0.006
-@time es .= exp_ikx_lz(sz; shift_by=Δx); # 0.003
+@time es .*= exp_ikx_col(sz; shift_by=Δx); # 0.012
+@time es .*= SeparableFunctions.exp_ikx_lz(sz; shift_by=Δx); # 0.010
+@time tmp = exp_ikx_sep(sz, shift_by=Δx); # 0.00015
+@time es .*= .*(tmp...); # 0.006 # seems to be the best and also works in Cuda
+@time SeparableFunctions.mul_exp_ikx!(es; shift_by=Δx); # 0.011
+
 # @vtp e es
 @time r = collect(rr2(sz)); # 0.01
 @time rs = rr2_col(sz, scale=1.0); # 0.003
-@time rs .= rr2_lz(sz, scale=(1.0,1.0)); # 0.0015
+@time rs .= SeparableFunctions.rr2_lz(sz, scale=(1.0,1.0)); # 0.0015
 # @vt r rs
 using BenchmarkTools
 @btime b = collect(box($sz)); # 0.012
 @btime bs = box_col($sz, boxsize=$sz./2); # 0.0005
 bs = box_col(sz);
-@btime bs .= box_lz($sz); # 0.025  (!!!)
+@btime bs .= SeparableFunctions.box_lz($sz); # 0.025  (!!!)
 fct = (x, pos, d) -> abs(x -pos) < 500 
 fct = (x) -> abs(x) < 500 
 bs = box_sep(sz, boxsize=sz./2); 
@@ -182,7 +188,7 @@ y .= (qq2).(CartesianIndices(rng)) .+ sqrt.(1.2.*(qq2).(CartesianIndices(rng)).*
 @btime $y[:] .= .+($r2_sep...)[:] .+ sqrt.(1.2.* .+($r2_sep...)[:] .* .+($r2_sep...)[:]); # 5.08 ms, 576 bytes
 r2 = .+(r2_sep...); 
 @btime $y .= $r2 .+ sqrt.(1.2.* $r2 .* $r2); # 1.314 ms, 0 bytes
-r2_lz = rr2_lz(sz);
+r2_lz = SeparableFunctions.rr2_lz(sz);
 @btime $y .= r2_lz .+ sqrt.(1.2.* r2_lz .* r2_lz); # 22.537 ms 384 bytes
 
 
@@ -198,7 +204,7 @@ b = a .+ 0.1f0im;
 
 @vtp p d
 @btime @views c .= f1.(.+($myrr2...));  # 0.049 sec (0 Mb) / 512 µs
-myrr2lz = rr2_lz(sz);
+myrr2lz = SeparableFunctions.rr2_lz(sz);
 @btime c .= f1.($myrr2lz);  # 0.085 sec (0 Mb) / 800 µs
 @btime c .= $myr;  # 3 ms / 4.3 µs 
 

@@ -23,15 +23,20 @@ function generate_functions_expr()
     # x_expr = :(scale .* (x .- offset))
 
     functions = [
-        # function_name, function_expression (always startin with x, sz, ...), result_type:
+        # Note that there is a problem with the CUDA toolbox. It does not support kwargs (in broadcasting).
+        # therefore this toolbox uses a mechanism to convert kwargs into normal args. It is a bit of a hack.
+        # A limitation is that only the last argument can use "nothing", get ignored, if not provided, and specify a sz-dependent calculation in the actual function header.
+        # This means that this argument can alternatively be supplied as a non-named argument and it will still work.
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
-        (:(gaussian), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
-        (:(normal), :((x,sz;sigma=1.0) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
-        (:(sinc), :((x,sz) -> sinc(x)), Float32, *),
-        (:(exp_ikx), :((x,sz; shift_by=sz÷2) -> cis(x*(-2pi*shift_by/sz))), ComplexF32, *),
-        (:(ramp), :((x,sz; slope) -> slope*x), Float32, +), # different meaning than IFA ramp
-        (:(rr2), :((x,sz) -> (x*x)), Float32, +),
-        (:(box), :((x,sz; boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *),
+        # FunctionName, kwarg_names, no_kwargs_function_definition, default_return_type, default_separamble_operator
+        (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
+        (:(normal), (sigma=1.0,), :((x,sz,sigma) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
+        (:(sinc), NamedTuple(), :((x,sz) -> sinc(x)), Float32, *),
+        # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
+        (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis(x*(-typeof(x)(2pi)*shift_by/sz))), ComplexF32, *),
+        (:(ramp), (slope=0,), :((x,sz, slope) -> slope*x), Float32, +), # different meaning than IFA ramp
+        (:(rr2), NamedTuple(), :((x,sz) -> (x*x)), Float32, +),
+        (:(box), (boxsize=nothing,), :((x,sz, boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *),
     ]
     return functions
 end
@@ -49,33 +54,33 @@ for F in generate_functions_expr()
     # default functions with offset and scaling behavior
  
     @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
-        fct = $(F[2]) # to assign the function to a symbol
-        separable_create(TA, fct, sz, args...; operation=$(F[4]), kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_create(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
-        fct = $(F[2]) # to assign the function to a symbol
-        separable_create(Array{$(F[3])}, fct, sz, args...; operation=$(F[4]), kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_create(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
-        fct = $(F[2]) # to assign the function to a symbol
-        calculate_separables(TA, fct, sz, args...; kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_separables(TA, fct, sz, args...; defaults=$(F[2]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
-        fct = $(F[2]) # to assign the function to a symbol
-        calculate_separables(Array{$(F[3])}, fct, sz, args...; kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_separables(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
-        fct = $(F[2]) # to assign the function to a symbol
-        separable_view(TA, fct, sz, args...; operation=$(F[4]), kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_view(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
-        fct = $(F[2]) # to assign the function to a symbol
-        separable_view(Array{$(F[3])}, fct, sz, args...; operation=$(F[4]), kwargs...)
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_view(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
 
     # collected: fast separable calculation but resulting in an ND array
@@ -83,7 +88,7 @@ for F in generate_functions_expr()
     # separated: a vector of separated contributions is returned and the user has to combine them
     @eval export $(Symbol(F[1], :_sep))
     # lazy: A LazyArray representation is returned
-    @eval export $(Symbol(F[1], :_lz))
+    # @eval export $(Symbol(F[1], :_lz))
 end 
 
 
