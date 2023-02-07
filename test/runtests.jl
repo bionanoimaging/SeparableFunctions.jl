@@ -30,37 +30,41 @@ end
 
 @testset "gaussian" begin
     sz = (11,22)
-    test_fct_t((gaussian, gaussian_col, gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));
+    test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));
 end
 
 @testset "rr2" begin
     sz = (11,22, 3)
     offset = (2,3,1)
-    test_fct_t((rr2, rr2_col, rr2_lz, rr2_sep, +), sz; scale=(2.2, 3.3, 1.0), offset=offset);
+    test_fct_t((rr2, rr2_col, SeparableFunctions.rr2_lz, rr2_sep, +), sz; scale=(2.2, 3.3, 1.0), offset=offset);
 end
 
 @testset "box" begin
     sz = (11,22, 3)
     offset = (2,3,1)
-    test_fct_t((box, box_col, box_lz, box_sep, *), sz; scale=(2.2, 3.3, 1.0), offset=offset);
+    test_fct_t((box, box_col, SeparableFunctions.box_lz, box_sep, *), sz; scale=(2.2, 3.3, 1.0), offset=offset);
 end
 
 @testset "ramp" begin
     sz = (11,22)
-    test_fct_t((xx(sz) .+ yy(sz), ramp_col, ramp_lz, ramp_sep, +), sz; slope=(1.0,1.0));
+    test_fct_t((xx(sz) .+ yy(sz), ramp_col, SeparableFunctions.ramp_lz, ramp_sep, +), sz; slope=(1.0,1.0));
 end
 
 @testset "exp_ikx" begin
     sz = (11, 22, 4)
     # scale leads to problems! Since  exp_ikx(sz) ≈ exp_ikx(sz, scale=(1.0,1.0,1.0))   -> false
-    test_fct(ComplexF32, (exp_ikx, exp_ikx_col, exp_ikx_lz, exp_ikx_sep, *), sz);
+    test_fct(ComplexF32, (exp_ikx, exp_ikx_col, SeparableFunctions.exp_ikx_lz, exp_ikx_sep, *), sz; shift_by=(1.1,0.2,2.2));
+    myshift = (0.1,0.2,0.3)
+    a = ones(ComplexF64,sz)
+    SeparableFunctions.mul_exp_ikx!(a; shift_by=myshift)
+    @test exp_ikx(sz; shift_by = myshift) ≈ a
 end
 
 @testset "sinc" begin
     sz = (12, 23)
     scale = (1.1, 2.2)
     mysinc = sinc.(xx(sz; scale=scale)) .* sinc.(yy(sz; scale=scale));
-    test_fct(Float32, (mysinc, sinc_col, sinc_lz, sinc_sep, *), sz; scale=scale);
+    test_fct(Float32, (mysinc, sinc_col, SeparableFunctions.sinc_lz, sinc_sep, *), sz; scale=scale);
 end
 
 function test_copy_corners(sz)
