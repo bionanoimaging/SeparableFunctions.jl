@@ -65,12 +65,12 @@ for F in generate_functions_expr()
 
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_separables(TA, fct, sz, args...; defaults=$(F[2]), kwargs...)
+        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_separables(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), kwargs...)
+        calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
@@ -120,7 +120,7 @@ function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (ma
 end
 
 """
-    propagator_col(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
 
 generates a propagator for propagating optical fields via exp(i kz Δz) with kz=sqrt(k0^2-kx^2-ky^2). The k-space radius is stated by
 k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./ (2 max.(sz ./ 2, 1))).

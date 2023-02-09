@@ -112,13 +112,13 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial2_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
+function calc_radial2_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
     sz = size(arr)
     # mymid = sz .÷ 2 .+1
     # reduces each of the vectors by two
 #    corners = ((sep[((1:size(sep,d)÷2+1) for d=1:lastindex(sep))...] for sep in myrr2sep)
     # @show typeof(arr)
-    @views arr[get_corner_ranges(sz)...] .= fct.(.+(myrr2sep...))
+    @views arr[get_corner_ranges(sz)...] .= fct.(myrr2sep)
     # @views arr[1:mymid[1],1:mymid[2]] .= fct.(myrr2sep[1][1:mymid[1],:] .+ myrr2sep[2][:,1:mymid[2]])
     copy_corners!(arr)
 end
@@ -160,7 +160,7 @@ The calculation is done fast by only evaluating on the first quadrant and replic
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
 + `myrr2sep`:   The separable xx^2 and yy^2 etc. information as obtained by `rr2_sep()`.
 """
-function calc_radial_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(get_real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
+function calc_radial_symm!(arr::TA, fct; scale = one(real(eltype(TA))), myrr2sep = rr2_sep(real_arr_type(TA), size(arr).÷2 .+1; scale=scale, offset=size(arr).÷2 .+1)) where {TA}
     calc_radial2_symm!(arr, (r2)->fct(sqrt(r2)); scale=scale, myrr2sep = myrr2sep)
 end
 

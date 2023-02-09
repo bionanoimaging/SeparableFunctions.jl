@@ -21,7 +21,7 @@ fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 @time q2 = collect(my_normal); # 
 @time sum(my_normal) # 0.0035. Does NOT allocate! But is not as accurate.
 my_sep = normal_sep(sz; sigma=sigma);
-@time sum(.*(my_sep...)) # Does allocate. But is more accurate
+@time sum(my_sep) # Does allocate. But is more accurate
 
 fct = (r, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 @time q = collect((prod(fct.(Tuple(c), (0.0,0.0), sigma)) for c in CartesianIndices(sz))); # takes 3 sec!
@@ -34,13 +34,17 @@ using IndexFunArrays
 sz = (2000,1900)
 Δx = (1.1, 2.2) # ./ (pi .* sz)
 es = ones(ComplexF32, sz)
+as = ones(ComplexF32, sz)
 @time e = collect(exp_ikx(sz, shift_by=Δx)); # 0.19
 @time e .*= exp_ikx(sz, shift_by=Δx); # 0.10
 # @vp e
 @time es .*= exp_ikx_col(sz; shift_by=Δx); # 0.012
 @time es .*= SeparableFunctions.exp_ikx_lz(sz; shift_by=Δx); # 0.010
 @time tmp = exp_ikx_sep(sz, shift_by=Δx); # 0.00015
-@time es .*= .*(tmp...); # 0.006 # seems to be the best and also works in Cuda
+@time es .*= tmp; # 0.006 # seems to be the best and also works in Cuda
+@time b = Broadcast.instantiate(Broadcast.broadcasted(*, tmp...))
+@time as .*= b; # 0.006 # seems to be the best and also works in Cuda
+
 @time SeparableFunctions.mul_exp_ikx!(es; shift_by=Δx); # 0.011
 
 # @vtp e es
@@ -52,11 +56,11 @@ using BenchmarkTools
 @btime b = collect(box($sz)); # 0.012
 @btime bs = box_col($sz, boxsize=$sz./2); # 0.0005
 bs = box_col(sz);
-@btime bs .= SeparableFunctions.box_lz($sz); # 0.025  (!!!)
-fct = (x, pos, d) -> abs(x -pos) < 500 
-fct = (x) -> abs(x) < 500 
-bs = box_sep(sz, boxsize=sz./2); 
-@btime res = .*($bs...) # 0.0004
+@btime bs .= SeparableFunctions.box_lz($sz); # 0.005 # 0.025  (!!!)
+#fct = (x, pos, d) -> abs(x -pos) < 500 
+#fct = (x) -> abs(x) < 500 
+bb = box_sep(sz, boxsize=sz./2); 
+@btime bs .= $bb; # 0.0004
 
 # @vt b bs
 
@@ -72,14 +76,14 @@ bs = box_sep(sz, boxsize=sz./2);
 
 if false
     using CUDA
-    CUDA.@time c_my_gaussian = gaussian_col(CuArray{Float32}, sz, sigma=sigma) #3 ms (GPU) vs 5 ms (CPU) 
-    CUDA.@time c_sep = gaussian_sep(CuArray{Float32}, sz, sigma=sigma) 
-    CUDA.@time c_my_gaussian2 = .*(c_sep...)  # 2 ms (GPU) vs 2 ms (CPU) # apply the separable collection
-    CUDA.@time c_my_gaussian2 .= .*(c_sep...)  # 2 ms (GPU) vs 1 ms (CPU) # apply the separable collection in place. No allocation
+    CUDA.@time c_my_gaussian = gaussian_col(CuArray{Float32}, sz, sigma=sigma); #3 ms (GPU) vs 5 ms (CPU) 
+    CUDA.@time c_sep = gaussian_sep(CuArray{Float32}, sz, sigma=sigma); # 1ms
+    # CUDA.@time c_my_gaussian2 = c_sep  # 2 ms (GPU) vs 2 ms (CPU) # apply the separable collection
+    CUDA.@time c_my_gaussian .= c_sep;  # 2.5 ms (GPU) vs 1 ms (CPU) # apply the separable collection in place. No allocation
 
-    CUDA.@time d = propagator_col(CuArray{ComplexF32}, sz); # 0.008 s
+    CUDA.@time d = propagator_col(CuArray{ComplexF32}, sz); # 0.011 s
     d = propagator_col(CuArray{ComplexF32}, sz); 
-    CUDA.@time d = propagator_col!(d); # 0.008 (no allocation)
+    CUDA.@time d = propagator_col!(d); # 0.01 (no allocation)
 end
 
 # How is the performance for a propagator, which is only partially separable?

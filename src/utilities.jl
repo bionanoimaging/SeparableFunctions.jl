@@ -82,11 +82,11 @@ end
 
 # moved to NDTools:
 # """
-#     get_real_arr_type(::Type{TA}) where {TA<:AbstractArray}
+#     real_arr_type(::Type{TA}) where {TA<:AbstractArray}
 
 # returns the same array type but using `(real(eltype()))` as the element type
 # """
-# function get_real_arr_type(::Type{TA}) where {TA<:AbstractArray}
+# function real_arr_type(::Type{TA}) where {TA<:AbstractArray}
 #     typeof(similar(TA(undef, ntuple(x->0, ndims(TA))), real(eltype(TA))))
 # end
  

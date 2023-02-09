@@ -63,6 +63,47 @@ function calculate_separables(fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=ze
     calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)
 end
 
+
+"""
+    calculate_broadcasted([::Type{TA},] fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
+
+returns an instantiated broadcasted separable array, which essentially behaves almost like an array yet uses broadcasting. Test revealed maximal speed improvements for this version.
+Yet, a problem is that reduce operations with specified dimensions cause an error. However this can be avoided by calling `collect`.
+
+# Arguments:
++ `fct`:          The separable function, with a number of arguments corresponding to `length(args)`, each corresponding to a vector of separable inputs of length N.
+                  The first argument of this function is a Tuple corresponding the centered indices.
++ `sz`:           The size of the N-dimensional array to create
++ `args`...:      a list of arguments, each being an N-dimensional vector
++ `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
++ `offset`:       position of the center from which the position is measured
++ `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
++ `operation`:    the separable operation connecting the separable dimensions
+
+```jldoctest
+julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
+julia> my_gaussian = calculate_broadcasted(fct, (6,5), (0.1,0.2), (0.5,1.0))
+Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{2}}(*, 
+(Float32[4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;], 
+Float32[0.088921614 0.48675224 … 0.726149 0.1978987]))
+julia> collect(my_gaussian)
+6×5 Matrix{Float32}:
+ 3.99823f-10  2.18861f-9   4.40732f-9   3.26502f-9   8.89822f-10
+ 1.3138f-5    7.19168f-5   0.000144823  0.000107287  2.92392f-5
+ 0.00790705   0.0432828    0.0871608    0.0645703    0.0175975
+ 0.0871608    0.477114     0.960789     0.71177      0.19398
+ 0.0175975    0.0963276    0.19398      0.143704     0.0391639
+ 6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
+```
+"""
+function calculate_broadcasted(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(TA, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)...))
+end
+
+function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {N}
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)...))
+end
+
 """
     separable_view{N}(fct, sz, args...; pos=zero(real(eltype(AT))), offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operation = .*)
 
@@ -82,7 +123,7 @@ See the example below.
 + `operation`:    the separable operation connecting the separable dimensions
 
 # Example:
-```julia
+```jldoctest
 julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
 (6×1 Matrix{Float32}) .* (1×5 Matrix{Float32}):

@@ -30,6 +30,7 @@ using ImageTransformations, StaticArrays
 using Interpolations
 
 export calculate_separables, separable_view, separable_create
+export calculate_broadcasted
 export copy_corners!
 export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!
 
