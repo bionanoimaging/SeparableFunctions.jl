@@ -2,7 +2,8 @@
     get_corner_ranges(sz::NTuple{N}; shifted_dims = zeros(Bool, N), inv_dims = zeros(Bool, N), full_dims=zeros(Bool, N)) where {N}
 
 returns a tuple of ranges that can be used for indexing various corners of an N-dimensional dataset.
-#Arguments
+
+# Arguments
 + `sz`:     total size of the data
 + `shifted_dims`:   an iterable of Boolean defining which dimension to shift (by half the datasize)
 + `inv_dims`:       an iterable of Boolean defining which which range dimension
@@ -22,7 +23,7 @@ end
 replicates the first N-dimensional quadrant my several mirror operations over the entire array.
 The overwrites the entire array with the (mirrored) content of the first quadrant!
 
-#Arguments
+# Arguments
 + `arr`:    The array in which the copy operations are performed
 + `speedup_last_dim=true`:  if `true` a one-dimensional assignment trick is used for the last non-singleton dimension.
 """
@@ -105,7 +106,7 @@ end
 evaluates the radial function `fct` over the entire array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
 
-#Arguments
+# Arguments
 + `arr`:    The array into which to evaluate the radial function 
 + `fct`:        The radial function of the squared radius, to be evaluate on the array coordinates. 
 
@@ -130,7 +131,7 @@ end
 evaluates the radial function `fct` in a newly created array. The function needs to accept the square of the radius as argument!
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
 
-#Arguments
+# Arguments
 + `TA`:         The array type for the newly created array. 
 + `sz`:         The size of the newly created array. 
 + `fct`:        The radial function of the squared radius, to be evaluate on the array coordinates. 
@@ -154,7 +155,7 @@ end
 evaluates the radial function `fct` over the entire array. The function needs to accept the radius as argument.
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
 
-#Arguments
+# Arguments
 + `arr`:    The array into which to evaluate the radial function 
 + `fct`:        The function of the radius, to be evaluate on the array coordinates. 
 + `scale`:      the vetorized scaling of the pixels (only used, if myrr2sep is not supplied by the user)
@@ -170,7 +171,7 @@ end
 evaluates the radial function `fct` over the entire array. The function needs to accept the radius as argument.
 The calculation is done fast by only evaluating on the first quadrant and replicating the results by copy operations using `copy_corners!()`.
 
-#Arguments
+# Arguments
 + `TA`:         The array type for the newly created array. 
 + `sz`:         The size of the newly created array. 
 + `fct`:        The function of the radius, to be evaluate on the array coordinates. 
@@ -221,6 +222,7 @@ end
 calculates a radially symmetric function on an array fast by using interpolation. 
 Other interpolation `method`s are for example: BSpline(Cubic(Flat(OnGrid()))), BSpline(Cubic(Line(OnGrid()))), BSpline(Quadratic(Line(OnGrid()))), BSpline(Linear())
 See also `calc_radial_symm` which does not use interpolation and is faster for fairly simple functions.
+        
 # Arguments
 + `::Type(TA)]`:    optionally the type of the array can be specified.
 + `rfun`:   The radial function `rfun(r)` with radius `r`, to calculate on the array.
