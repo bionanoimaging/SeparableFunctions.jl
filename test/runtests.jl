@@ -14,13 +14,12 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     b = col(Array{T}, sz, args...; kwargs...)
     c = lz(Array{T}, sz, args...; kwargs...)
     res = sep(Array{T}, sz, args...; kwargs...)
-    d = op.(res...)
     @test a≈b
     @test eltype(b)==T
     @test a≈c
     @test eltype(c)==T
-    @test a≈d
-    @test eltype(d)==T
+    @test a≈collect(res)
+    @test eltype(collect(res))==T
 end
 
 function test_fct_t(fcts, sz, args...; kwargs...)

@@ -65,12 +65,12 @@ for F in generate_functions_expr()
 
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), kwargs...)
+        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), kwargs...)
+        calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
