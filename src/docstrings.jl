@@ -276,7 +276,7 @@ exp_ikx_docstring = "yield an `exp.(1im .* k .* Δx)` function. A scaling of one
 compared to the version in `IndexFunArray.jl`. Here the default scaling of 1.0 corresponds to the default scaling of ScaFT in `IndexFunArrays.jl`."
 
 """
-    exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 
@@ -298,7 +298,7 @@ julia> my_exp_ikx = exp_ikx_col((6,5); shift_by=(1.0,0.0), pos=pos)
 exp_ikx_col
 
 """
-    exp_ikx_lz([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_lz([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -308,7 +308,7 @@ $(returns_lz)
 exp_ikx_lz
 
 """
-    exp_ikx_sep([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_sep([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 
