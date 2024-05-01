@@ -11,6 +11,7 @@ function test_fct(T, fcts, sz, args...; kwargs...)
             ifa(T, sz, args...; kwargs...)
         end
     end
+
     b = col(Array{T}, sz, args...; kwargs...)
     c = lz(Array{T}, sz, args...; kwargs...)
     res = sep(Array{T}, sz, args...; kwargs...)
@@ -20,6 +21,15 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     @test eltype(c)==T
     @test a≈collect(res)
     @test eltype(collect(res))==T
+
+    all_axes = zeros(T, prod(sz))
+    b2 = col(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    @test b≈b2
+    c2 = lz(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    @test c≈c2
+    res2 = sep(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    @test collect(res)≈collect(res2)
+    @test sum(abs.(all_axes)) > 0
 end
 
 function test_fct_t(fcts, sz, args...; kwargs...)
@@ -27,9 +37,24 @@ function test_fct_t(fcts, sz, args...; kwargs...)
     test_fct(Float64, fcts, sz, args...;kwargs...)
 end
 
+@testset "calculate_separables" begin
+    sz = (13,15)
+    fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), pos = (0.1,0.2))
+    @test size(.*(gauss_sep...)) == sz
+    # test with preallocated array
+    all_axes = zeros(Float32, prod(sz))
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), all_axes = all_axes, pos = (0.0,0.0))
+    @test all_axes[7] ≈ 1.0
+    @test all_axes[13+8] ≈ 1.0
+end
+
 @testset "gaussian" begin
     sz = (11,22)
-    test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));
+    test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));    
+    # # test with preallocated array
+    # all_axes = zeros(Float32, prod(sz))
+    # test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; all_axes = all_axes, sigma=(11.2, 5.5));
 end
 
 @testset "rr2" begin

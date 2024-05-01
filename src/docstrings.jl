@@ -12,9 +12,7 @@ the `_sep` version an iterable of one-dimensional but oriented arrays, which can
 
 returns_col = "returns the collected N-dimensional array."
 returns_lz = "returns the a lazy version of an N-dimensional array only using memory for the separated 1-dimensional arrays. See the `_col` version for an example."
-returns_sep_mul = "returns an iterable with the one-dimensional arrays, which can be used via `.*(res...)` wiht `res` being the result of calling this function."
-returns_sep_add = "returns an iterable with the one-dimensional arrays, which can be used via `.+(res...)` wiht `res` being the result of calling this function."
-
+returns_sep = "returns a Broadcasted iterable with several one-dimensional arrays, which can be used like an array. Note assigning it to a variable is not allocating, only copy the data."
 
 gaussian_docstring = "creates a multidimensional Gaussian by exployting separability speeding up the calculation."
 
@@ -23,7 +21,7 @@ gaussian_docstring = "creates a multidimensional Gaussian by exployting separabi
 
 $(gaussian_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
++ `sigma`:  tuple of standard-deviation along each dimension
 $(returns_col)
 
 #Example
@@ -46,7 +44,7 @@ gaussian_col
 
 $(gaussian_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
++ `sigma`:  tuple of standard-deviation along each dimension
 $(returns_lz)
 """
 gaussian_lz
@@ -56,8 +54,8 @@ gaussian_lz
 
 $(gaussian_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
-$(returns_sep_mul)
++ `sigma`:  tuple of standard-deviation along each dimension
+$(returns_sep)
 """
 gaussian_sep
 ###
@@ -68,7 +66,7 @@ normal_docstring = "creates a multidimensional normalized Gaussian by exployting
 
 $(normal_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
++ `sigma`:  tuple of standard-deviation along each dimension
 $(returns_col)
 #Example
 ```jldoctest
@@ -90,7 +88,7 @@ normal_col
 
 $(normal_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
++ `sigma`:  tuple of standard-deviation along each dimension
 $(returns_lz)
 """
 normal_lz
@@ -100,8 +98,8 @@ normal_lz
 
 $(normal_docstring)$(common_docstring)
 
-+ `sigma`:  tuple of standard-deviation along each dimensional
-$(returns_sep_mul)
++ `sigma`:  tuple of standard-deviation along each dimension
+$(returns_sep)
 """
 normal_sep
 
@@ -140,7 +138,7 @@ rr2_lz
     rr2_sep([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
-$(returns_sep_add)
+$(returns_sep)
 """
 rr2_sep
 
@@ -179,7 +177,7 @@ sinc_lz
 sinc_sep([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
-$(returns_sep_mul)
+$(returns_sep)
 """
 sinc_sep
 
@@ -224,7 +222,7 @@ box_sep([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N)
 $(box_docstring)$(common_docstring)
 
 + `boxsize`:  a vector defining each sidelength of the box.
-$(returns_sep_mul)
+$(returns_sep)
 """
 box_sep
 
@@ -267,7 +265,7 @@ ramp_lz
 $(ramp_docstring)$(common_docstring)
 
 + `slope`:  a vector defining the N-dimensional gradient of the ramp.
-$(returns_sep_mul)
+$(returns_sep)
 """
 ramp_sep
 
@@ -313,6 +311,6 @@ exp_ikx_lz
 $(exp_ikx_docstring)$(common_docstring)
 
 + `shift_by`:  a vector defining the real-space shift that would be caused by this function being multiplied in Fourier-space.
-$(returns_sep_mul)
+$(returns_sep)
 """
 exp_ikx_sep

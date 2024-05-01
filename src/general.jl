@@ -1,5 +1,5 @@
 """
-    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; dims = 1:N, all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz[[dims...]])), pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
 
 creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
@@ -11,6 +11,7 @@ This function is used in `separable_view` and `separable_create`.
 + `sz`:     the size of the result array (when appying the one-D axes)
 + `args`:   further arguments which are passed over to the function `fct`.
 + `dims`:   a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
++ `all_axes`: if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `pos`:    a position shifting the indices passed to `fct` in relationship to the `offset`.
 + `offset`: specifying the center (zero-position) of the result array in one-based coordinates. The default corresponds to the Fourier-center.
 + `scale`:  multiplies the index before passing it to `fct`
@@ -32,13 +33,15 @@ julia> gauss_sep = calculate_separables(fct, (6,5), (0.5,1.0), pos = (0.1,0.2))
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; defaults=NamedTuple(), dims = 1:N, pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N,
+                                all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz[[dims...]])),
+                                defaults=NamedTuple(),  pos=zero(real(eltype(AT))),
+                                offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
     idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
     dims = [dims...]
     valid_sz = sz[dims]
-    all_axes = (similar_arr_type(AT, dims=1))(undef, sum(valid_sz))
     # allocate a contigous memory to be as cash-efficient as possible and dice it up below
     res = ntuple((d) -> reorient((@view all_axes[1+sum(valid_sz[1:d])-sz[dims[d]]:sum(valid_sz[1:d])]), dims[d], Val(N)), lastindex(dims)) # Vector{AT}()
     # @show kwarg_n(dims[1], kwargs)
@@ -59,8 +62,10 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; defa
     return res
 end
 
-function calculate_separables(fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), kwargs...) where {N}
-    calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)
+function calculate_separables(fct, sz::NTuple{N, Int}, args...; dims=1:N,
+        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), kwargs...) where {N}
+    calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)
 end
 
 
@@ -76,6 +81,7 @@ Yet, a problem is that reduce operations with specified dimensions cause an erro
 + `sz`:           The size of the N-dimensional array to create
 + `args`...:      a list of arguments, each being an N-dimensional vector
 + `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
++ `all_axes`: if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
 + `operation`:    the separable operation connecting the separable dimensions
@@ -96,18 +102,22 @@ julia> collect(my_gaussian)
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function calculate_broadcasted(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
-    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(TA, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)...))
+function calculate_broadcasted(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, 
+        all_axes = (similar_arr_type(TA, dims=1))(undef, sum(sz[[dims...]])),
+        pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(TA, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, kwargs...)...))
 end
 
-function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {N}
-    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)...))
+function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; dims=1:N,
+        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {N}
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, kwargs...)...))
 end
 
 """
     separable_view{N}(fct, sz, args...; pos=zero(real(eltype(AT))), offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operation = .*)
 
-creates an array view of an N-dimensional separable function.
+creates an `LazyArray` view of an N-dimensional separable function.
 Note that this view consumes much less memory than a full allocation of the collected result.
 Note also that an N-dimensional calculation expression may be much slower than this view reprentation of a product of N one-dimensional arrays.
 See the example below.
@@ -118,6 +128,7 @@ See the example below.
 + `sz`:           The size of the N-dimensional array to create
 + `args`...:      a list of arguments, each being an N-dimensional vector
 + `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
++ `all_axes`:     if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
 + `operation`:    the separable operation connecting the separable dimensions
@@ -135,13 +146,17 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
  6.50731e-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, operation = *, kwargs...) where {TA, N}
-    res = calculate_separables(TA, fct, sz, args...; dims=dims, kwargs...)
+function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N,
+        all_axes = (similar_arr_type(TA, dims=1))(undef, sum(sz[[dims...]])),
+        operation = *, kwargs...) where {TA, N}
+    res = calculate_separables(TA, fct, sz, args...; dims=dims, all_axes = all_axes, kwargs...)
     return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
 end
 
-function separable_view(fct, sz::NTuple{N, Int}, args...; dims=1:N, operation = *, kwargs...) where {N}
-    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; dims=dims, operation=operation, kwargs...)
+function separable_view(fct, sz::NTuple{N, Int}, args...; dims=1:N,
+        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        operation = *, kwargs...) where {N}
+    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; dims=dims, all_axes = all_axes, operation=operation, kwargs...)
 end
 
 """
@@ -156,6 +171,7 @@ See the example below.
 + `sz`:           The size of the N-dimensional array to create
 + `args`...:      a list of arguments, each being an N-dimensional vector
 + `dims`:         a vector `[]` of valid dimensions. Only these dimension will be calculated but they are oriented in ND.
++ `all_axes`:     if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
 + `operation`:    the separable operation connecting the separable dimensions
