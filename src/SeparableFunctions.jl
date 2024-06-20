@@ -28,6 +28,8 @@ module SeparableFunctions
 using NDTools, LazyArrays
 using ImageTransformations, StaticArrays
 using Interpolations
+using ChainRulesCore # for adjoint definition
+using Zygote
 
 export calculate_separables, separable_view, separable_create
 export calculate_broadcasted

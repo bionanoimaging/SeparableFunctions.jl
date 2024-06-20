@@ -1,5 +1,5 @@
 """
-    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; dims = 1:N, all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz[[dims...]])), pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+    calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; dims = 1:N, all_axes = (similar_arr_type(AT, dims=Val(1)))(undef, sum(sz[[dims...]])), pos=zero(real(eltype(AT))), offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
 
 creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
@@ -34,9 +34,11 @@ julia> gauss_sep = calculate_separables(fct, (6,5), (0.5,1.0), pos = (0.1,0.2))
 ```
 """
 function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N,
-                                all_axes = (similar_arr_type(AT, dims=1))(undef, sum(sz[[dims...]])),
+                                all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
                                 defaults=NamedTuple(),  pos=zero(real(eltype(AT))),
-                                offset=sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...) where {AT, N}
+                                offset=sz.÷2 .+1,
+                                scale=one(real(eltype(AT))),
+                                factor=one(real(eltype(AT))), kwargs...) where {AT, N}
     start = 1 .- offset
     idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
@@ -48,13 +50,24 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims
     # @show arg_n(dims[1], args)
     # @show idc
     extra_args = kwargs_to_args(defaults, kwarg_n(dims[1], kwargs))
-    res[1][:] .= fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
+    if isa(factor, Number) 
+        factor = ntuple((d) -> factor, lastindex(dims))
+    end
+    # @show factor
+    res[1][:] .= (factor[1]) .* fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
     for d = 2:lastindex(dims)
         idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
         extra_args = kwargs_to_args(defaults, kwarg_n(dims[d], kwargs))
-        res[d][:] .= fct.(idc, sz[dims[d]], extra_args..., arg_n(dims[d], args)...)
+        tmp = let 
+            if isa(factor[d], Number) 
+                factor[d]
+            else
+                @view factor[d][:]
+            end
+        end
+        res[d][:] = tmp .* fct.(idc, sz[dims[d]], extra_args..., arg_n(dims[d], args)...)
         # res[d] .= reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N))
         # LazyArray representation of expression
         # push!(res, myaxis)
@@ -63,11 +76,51 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims
 end
 
 function calculate_separables(fct, sz::NTuple{N, Int}, args...; dims=1:N,
-        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz[[dims...]])),
         pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), kwargs...) where {N}
     calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, dims=dims, pos=pos, offset=offset, scale=scale, kwargs...)
 end
 
+# define custom adjoint for calculate_separables
+# function ChainRulesCore.rrule(::typeof(calculate_separables), conv, rec, otf)
+# end
+
+function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables), ::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N,
+        all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
+        defaults = NamedTuple(),  pos=zero(real(eltype(AT))),
+        offset = sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...)  where {AT, N}
+
+    println("inside rrule! $(sz), $(dims), $(offset)")
+    # foward pass
+    y = calculate_separables(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, kwargs...)
+
+    # extra_args = kwargs_to_args(defaults, kwarg_n(dims[1], kwargs))
+    # res[1][:] .= fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
+
+#     d_off_fct = (idx, sz, args...; kwargs...) -> rrule((x) -> 
+#     fct(x, sz, args...; kwargs...), idx)[2](1)[1]
+#     d_scale_fct = (idx, sz, args...; kwargs...) -> idx * rrule((x, sz, args...; kwargs...) ->
+#     fct(x, sz, args...; kwargs...), idx)[2](1)[1]
+#     d_pos_fct = d_off_fct
+
+    d_off_fct = (idx, sz, args...; kwargs...) -> rrule_via_ad(config, (x) -> 
+                fct(x, sz, args...), idx; kwargs...)[1]
+    d_scale_fct = (idx, sz, args...; kwargs...) -> idx * rrule_via_ad(config, (x) ->
+                fct(x, sz, args...), idx;kwargs...)[1]
+    d_pos_fct = d_off_fct
+
+    function calculate_separables_pullback(dy) # dy is the gradient of the output
+        # multiply by dy?
+        doffset = calculate_separables(AT, d_off_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = dy, kwargs...)
+        dscale = 1 #calculate_separables(AT, d_scale_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = 1, kwargs...)
+        dpos = 1 # calculate_separables(AT, d_pos_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = 1, kwargs...)
+        dargs = args;
+        # It should return the gradient of the inputs
+        # println(doffset)
+        return (NoTangent(), NoTangent(), NoTangent(), doffset, dargs...,  NoTangent(), NoTangent(), NoTangent(), dpos, doffset, dscale, NoTangent())
+    end
+    return y, calculate_separables_pullback
+end
 
 """
     calculate_broadcasted([::Type{TA},] fct, sz::NTuple{N, Int}, args...; dims=1:N, pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
@@ -102,14 +155,14 @@ julia> collect(my_gaussian)
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function calculate_broadcasted(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N, 
-        all_axes = (similar_arr_type(TA, dims=1))(undef, sum(sz[[dims...]])),
-        pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
-    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(TA, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, kwargs...)...))
+function calculate_broadcasted(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims=1:N, 
+        all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
+        pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {AT, N}
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, kwargs...)...))
 end
 
 function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; dims=1:N,
-        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz[[dims...]])),
         pos=zero(real(eltype(DefaultArrType))), offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {N}
     Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, kwargs...)...))
 end
@@ -146,15 +199,15 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
  6.50731e-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_view(::Type{TA}, fct, sz::NTuple{N, Int}, args...; dims=1:N,
-        all_axes = (similar_arr_type(TA, dims=1))(undef, sum(sz[[dims...]])),
-        operation = *, kwargs...) where {TA, N}
-    res = calculate_separables(TA, fct, sz, args...; dims=dims, all_axes = all_axes, kwargs...)
+function separable_view(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims=1:N,
+        all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
+        operation = *, kwargs...) where {AT, N}
+    res = calculate_separables(AT, fct, sz, args...; dims=dims, all_axes = all_axes, kwargs...)
     return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
 end
 
 function separable_view(fct, sz::NTuple{N, Int}, args...; dims=1:N,
-        all_axes = (similar_arr_type(DefaultArrType, dims=1))(undef, sum(sz[[dims...]])),
+        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz[[dims...]])),
         operation = *, kwargs...) where {N}
     separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; dims=dims, all_axes = all_axes, operation=operation, kwargs...)
 end
@@ -189,12 +242,16 @@ julia> my_gaussian = separable_create(fct, (6,5), (0.5,1.0); pos=(0.1,0.2))
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operation = *, kwargs...) where {TA, N}
+function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operation::Function = *, kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
     res = calculate_separables(TA, fct, sz, args...; kwargs...)
     operation.(res...)
 end
 
-function separable_create(fct, sz::NTuple{N, Int}, args...; operation = *, kwargs...) where {N}
-    res = calculate_separables(DefaultArrType, fct, sz, args...; kwargs...)
-    operation.(res...)
+## the code below seems not type-stable but the code above is. Why?
+function separable_create(fct, sz::NTuple{N, Int}, args...; operation::Function = *, kwargs...)::similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)) where {N}
+    # TT = similar_arr_type(DefaultArrType, Float32, Val(N))
+    # res = calculate_separables(similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)), fct, sz, args...; kwargs...)
+    # return operation.(res...)
+    # resT = 
+    separable_create(similar_arr_type(DefaultArrType, Float32, Val(N)), fct, sz, args...; operation=operation, kwargs...)
 end

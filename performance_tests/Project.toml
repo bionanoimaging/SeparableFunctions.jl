@@ -1,4 +1,5 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
 SeparableFunctions = "c8c7ead4-852c-491e-a42d-3d43bc74259e"

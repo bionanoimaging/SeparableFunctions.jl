@@ -79,26 +79,3 @@ function kwargs_to_args(defaults, kwargs)
     end
     Tuple(res)
 end
-
-# moved to NDTools:
-# """
-#     real_arr_type(::Type{TA}) where {TA<:AbstractArray}
-
-# returns the same array type but using `(real(eltype()))` as the element type
-# """
-# function real_arr_type(::Type{TA}) where {TA<:AbstractArray}
-#     typeof(similar(TA(undef, ntuple(x->0, ndims(TA))), real(eltype(TA))))
-# end
- 
-# """
-#     similar_arr_type(::Type{TA}) where {TA<:AbstractArray}
-
-# returns a similar array type but using as TA, but eltype and ndims can be changed.
-# """
-# function similar_arr_type(::Type{TA}; dims=N, dtype=T) where {T,N, TA<:AbstractArray{T,N}}
-#     typeof(similar(TA(undef, ntuple(x->0, N)), dtype, dims))
-# end
- 
-# function similar_arr_type(::Type{TA}; dims=1, dtype=eltype(TA)) where {TA<:AbstractArray}
-#     typeof(similar(TA(undef), dtype, dims))
-# end
