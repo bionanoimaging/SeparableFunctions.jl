@@ -16,7 +16,7 @@ The package offers a general way of calculating separable functions as well as a
 
 The non-lazy version should currently also work with `CUDA.jl`, however the `LazyArrays` version does not. To nevertheless use separable expressions in `CUDA.jl`, you can reside to externally applying the broadcast operator to the separable expression (see the `gaussian_sep` example below).
 
-The package further offers a number of predifined separable function implementations such as `gaussian_col()` collects a multidimensional array of a multidimensional Gaussian via a fast seperable implementation, `gaussian_lz()` yields a lazy representation via `LazyArrays` and `sep = gaussian_sep()` yields a `broadcasted` type, which behaves like an array, if used in an expression, but hast not yet been expanded to a full-sized array (recommmended mode of using the package).
+The package further offers a number of predifined separable function implementations such as `gaussian_col()` collects a multidimensional array of a multidimensional Gaussian via a fast seperable implementation, `gaussian_lz()` yields a lazy representation via `LazyArrays` and `sep = gaussian_sep()` yields a `broadcasted` type, which behaves like an array, if used in an expression, but hast not yet been expanded to a full-sized array (recommended mode of using the package).
 
 Another noteworthy example is the complex plain wave as represented by the respective function `exp_ikx_col()`, `exp_ikx_lz()`, `exp_ikx_sep()`.
 
