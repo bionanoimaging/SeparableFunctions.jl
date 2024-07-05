@@ -30,7 +30,7 @@ function generate_functions_expr()
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         # FunctionName, kwarg_names, no_kwargs_function_definition, default_return_type, default_separamble_operator
         (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
-        (:(normal), (sigma=1.0,), :((x,sz,sigma) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
+        (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
         (:(sinc), NamedTuple(), :((x,sz) -> sinc(x)), Float32, *),
         # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
         (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis(x*(-typeof(x)(2pi)*shift_by/sz))), ComplexF32, *),
@@ -73,6 +73,20 @@ for F in generate_functions_expr()
         calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
  
+    @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
+                        all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz[[(1:N)...]]))
+                    ) where {TA, N}
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_broadcasted_nokw(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+    end
+
+    @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
+                        all_axes = (similar_arr_type(Array{$(F[4])}, eltype(Array{$(F[4])}), Val(1)))(undef, sum(sz[[(1:N)...]]))
+                    ) where {N}
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+    end
+ 
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
         separable_view(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
@@ -88,6 +102,7 @@ for F in generate_functions_expr()
     # separated: a vector of separated contributions is returned and the user has to combine them
     @eval export $(Symbol(F[1], :_sep))
     # lazy: A LazyArray representation is returned
+    @eval export $(Symbol(F[1], :_nokw_sep))
     # @eval export $(Symbol(F[1], :_lz))
 end 
 

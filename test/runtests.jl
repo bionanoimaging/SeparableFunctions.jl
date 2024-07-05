@@ -3,7 +3,7 @@ using IndexFunArrays
 using SeparableFunctions
 
 function test_fct(T, fcts, sz, args...; kwargs...)
-    ifa, col, lz, sep, op = fcts
+    ifa, fct = fcts
     a = let 
         if typeof(ifa) <: AbstractArray
             ifa
@@ -12,25 +12,22 @@ function test_fct(T, fcts, sz, args...; kwargs...)
         end
     end
 
-    b = col(Array{T}, sz, args...; kwargs...)
-    c = lz(Array{T}, sz, args...; kwargs...)
-    res = sep(Array{T}, sz, args...; kwargs...)
-    @test a≈b
-    @test eltype(b)==T
-    @test a≈c
-    @test eltype(c)==T
-    @test a≈collect(res)
-    @test eltype(collect(res))==T
+    res = fct(Array{T}, sz, args...; kwargs...)
+    # @test (typeof(res) <: AbstractArray) == false
+    res = collect(res)
+    @test (typeof(res) <: AbstractArray) == true
+    @test a≈res
+    @test eltype(res)==T
 
     all_axes = zeros(T, prod(sz))
-    b2 = col(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
-    @test b≈b2
-    c2 = lz(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
-    @test c≈c2
-    res2 = sep(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
-    @test collect(res)≈collect(res2)
+    res2 = fct(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    # @test (typeof(res2) <: AbstractArray) == false
+    res2 = collect(res2)
+    @test (typeof(res2) <: AbstractArray) == true
+    @test res≈res2
     @test sum(abs.(all_axes)) > 0
 end
+
 
 function test_fct_t(fcts, sz, args...; kwargs...)
     test_fct(Float32, fcts, sz, args...;kwargs...)
@@ -40,7 +37,8 @@ end
 @testset "calculate_separables" begin
     sz = (13,15)
     fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), pos = (0.1,0.2))
+    offset = (2.2, -2.2)  ; scale = (1.1, 1.2); factor = 1.0;
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), pos = (0.1,0.2), offset=offset, scale=scale, factor=factor)
     @test size(.*(gauss_sep...)) == sz
     # test with preallocated array
     all_axes = zeros(Float32, prod(sz))
@@ -51,7 +49,15 @@ end
 
 @testset "gaussian" begin
     sz = (11,22)
-    test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));    
+    sigma = (11.2, 5.5)
+    mygaussian = gaussian(sz, sigma=sigma)
+    test_fct_t((mygaussian, gaussian_col), sz; sigma=sigma);    
+    test_fct_t((mygaussian, SeparableFunctions.gaussian_lz), sz; sigma=sigma);    
+    test_fct_t((mygaussian, gaussian_sep), sz; sigma=sigma);    
+    offset = sz.÷2 .+1 ; scale = (1.0, 1.0); factor = 1.0;
+    test_fct_t((mygaussian, gaussian_nokw_sep), sz, offset, scale, factor, sigma);    
+
+    # test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; sigma=(11.2, 5.5));    
     # # test with preallocated array
     # all_axes = zeros(Float32, prod(sz))
     # test_fct_t((gaussian, gaussian_col, SeparableFunctions.gaussian_lz, gaussian_sep, *), sz; all_axes = all_axes, sigma=(11.2, 5.5));
@@ -59,25 +65,52 @@ end
 
 @testset "rr2" begin
     sz = (11,22, 3)
-    offset = (2,3,1)
-    test_fct_t((rr2, rr2_col, SeparableFunctions.rr2_lz, rr2_sep, +), sz; scale=(2.2, 3.3, 1.0), offset=offset);
+    offset = (2,3,1) # try some offset not in the center
+    scale = (2.2, 3.3, 1.0) # and a non-unity scale
+    myrr2 = rr2(sz; offset=offset, scale=scale)
+    test_fct_t((myrr2, rr2_col), sz; scale=scale, offset=offset);
+    test_fct_t((myrr2, SeparableFunctions.rr2_lz), sz; scale=scale, offset=offset);
+    test_fct_t((myrr2, rr2_sep), sz; scale=scale, offset=offset);
+    factor = 2.0;
+    test_fct_t((2 .*myrr2, rr2_nokw_sep), sz, offset, scale, factor);
+
+    offset = sz .÷ 2 .+1 # try some offset not in the center
+    scale = (1.0, 1.0, 1.0) # and a non-unity scale
+    myrr2 = rr2(sz; offset=offset, scale=scale)
+    test_fct_t((myrr2, rr2_nokw_sep), sz); # should be the same as the default
 end
 
 @testset "box" begin
     sz = (11,22, 3)
     offset = (2,3,1)
-    test_fct_t((box, box_col, SeparableFunctions.box_lz, box_sep, *), sz; scale=(2.2, 3.3, 1.0), offset=offset);
+    scale = (2.2, 3.3, 1.0)
+    mybox = box(sz; offset=offset, scale=scale)
+    test_fct_t((mybox, box_col), sz; scale=scale, offset=offset);
+    test_fct_t((box, SeparableFunctions.box_lz), sz; scale=scale, offset=offset);
+    test_fct_t((box, box_sep), sz; scale=scale, offset=offset);
+    test_fct_t((mybox, box_nokw_sep), sz, offset, scale); 
 end
 
 @testset "ramp" begin
     sz = (11,22)
-    test_fct_t((xx(sz) .+ yy(sz), ramp_col, SeparableFunctions.ramp_lz, ramp_sep, +), sz; slope=(1.0,1.0));
+    slope = (1.0, 2.2)
+    myxy = slope[1].*xx(sz) .+ slope[2].*yy(sz)
+    test_fct_t((myxy, ramp_col,), sz; slope=slope);
+    test_fct_t((myxy, SeparableFunctions.ramp_lz), sz; slope=slope);
+    test_fct_t((myxy, ramp_sep), sz; slope=slope);
+    test_fct_t((myxy, ramp_nokw_sep), sz, nothing, nothing, nothing, slope);
 end
 
 @testset "exp_ikx" begin
     sz = (11, 22, 4)
+    shift_by = (1.1, 0.2, 2.2)
+    myexp_ikx = exp_ikx(sz; shift_by = shift_by)
     # scale leads to problems! Since  exp_ikx(sz) ≈ exp_ikx(sz, scale=(1.0,1.0,1.0))   -> false
-    test_fct(ComplexF32, (exp_ikx, exp_ikx_col, SeparableFunctions.exp_ikx_lz, exp_ikx_sep, *), sz; shift_by=(1.1,0.2,2.2));
+    test_fct(ComplexF32, (myexp_ikx, exp_ikx_col), sz; shift_by=shift_by);
+    test_fct(ComplexF32, (myexp_ikx, SeparableFunctions.exp_ikx_lz), sz; shift_by=shift_by);
+    test_fct(ComplexF32, (myexp_ikx, exp_ikx_sep), sz; shift_by=shift_by);
+    test_fct(ComplexF32, (myexp_ikx, exp_ikx_nokw_sep), sz, nothing, nothing, nothing, shift_by);
+
     myshift = (0.1,0.2,0.3)
     a = ones(ComplexF64,sz)
     SeparableFunctions.mul_exp_ikx!(a; shift_by=myshift)
@@ -88,7 +121,10 @@ end
     sz = (12, 23)
     scale = (1.1, 2.2)
     mysinc = sinc.(xx(sz; scale=scale)) .* sinc.(yy(sz; scale=scale));
-    test_fct(Float32, (mysinc, sinc_col, SeparableFunctions.sinc_lz, sinc_sep, *), sz; scale=scale);
+    test_fct(Float32, (mysinc, sinc_col), sz; scale=scale);
+    test_fct(Float32, (mysinc, SeparableFunctions.sinc_lz), sz; scale=scale);
+    test_fct(Float32, (mysinc, sinc_sep), sz; scale=scale);
+    test_fct(Float32, (mysinc, sinc_nokw_sep), sz, nothing, scale);
 end
 
 function test_copy_corners(sz)
@@ -121,6 +157,11 @@ end
     res4 = gaussian_col(sz, sigma=sigma) 
     res5 = radial_speedup_ifa(gaussian, sz; sigma=sigma) 
     @test maximum(abs.(res4 .- res5)) < 1e-6
+end
+
+@testset "gradients" begin
+    sz = (10,10)
+    gradient((x) -> gaussian_nokw_sep(sz, x, 1.0, 1.0, 1.0), (2.2,3.3))
 end
 
 return
