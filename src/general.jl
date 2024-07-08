@@ -43,7 +43,7 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
                                 factor = one(real(eltype(AT))), 
                                 args...; dims = 1:N,
                                 all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
-                                defaults=NamedTuple(),  pos=zero(real(eltype(AT))),
+                                pos=zero(real(eltype(AT))),
                                 kwargs...) where {AT, N}
 
     RT = real(eltype(AT))
@@ -52,7 +52,6 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     factor = isnothing(factor) ? one(real(eltype(RT))) : RT.(factor)
     start = 1 .- offset
 
-    idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
     # @show typeof(idc)
     dims = [dims...]
     valid_sz = sz[dims]
@@ -61,7 +60,8 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # @show kwarg_n(dims[1], kwargs)
     # @show arg_n(dims[1], args)
     # @show idc
-    extra_args = kwargs_to_args(defaults, kwarg_n(dims[1], kwargs))
+
+    # @show extra_args
     if isa(factor, Number) 
         factor = ntuple((d) -> factor, lastindex(dims))
     end
@@ -71,43 +71,88 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # @show kwargs
     # @show collect(arg_n(dims[1], args))
     # @show (idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
-    res[1][:] .= (factor[1]) .* fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
+    # res[1][:] .= (factor[1]) .* fct.(idc, sz[dims[1]], arg_n(dims[1], args)...)
+    # idc = pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos))
+    # res = in_place_assing!(res, 1, factor[1], fct, idc, sz[dims[1]], arg_n(dims[1], args))
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
-    for d = 2:lastindex(dims)
-        idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
+    # for d = eachindex(dims)
+    ntuple((d) -> 
+        # idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
-        extra_args = kwargs_to_args(defaults, kwarg_n(dims[d], kwargs))
-        tmp = let 
-            if isa(factor[d], Number) 
-                factor[d]
-            else
-                @view factor[d][:]
-            end
-        end
-        res[d][:] = tmp .* fct.(idc, sz[dims[d]], extra_args..., arg_n(dims[d], args)...)
-        # res[d] .= reorient(fct.(idc, sz[d], arg_n(d, args)...; kwarg_n(d, kwargs)...), d, Val(N))
+        # extra_args = kwargs_to_args(defaults, kwarg_n(dims[d], kwargs))
+        # tmp = let 
+        #     if isa(factor[d], Number) 
+        #         factor[d]
+        #     else
+        #         @view factor[d][:]
+        #     end
+        # end
+        # res[d][:] .= tmp .* fct.(idc, sz[dims[d]], arg_n(dims[d], args)...)
+        in_place_assing!(res, d, factor[d], fct, pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos)), sz[dims[d]], arg_n(dims[d], args))
+
         # LazyArray representation of expression
         # push!(res, myaxis)
-    end
+        , lastindex(dims)) # Vector{AT}()
+    # end
     return res
 end
+
+
+# a special in-place assignment, which gets its own differentiation rule for the reverse mode 
+# to avoid problems with memory-assignment and AD.
+function in_place_assing!(res, d, tmp, fct, idc, sz1d, args_d)
+    res[d][:] .= tmp .* fct.(idc, sz1d, args_d...)
+    return res[d]
+end
+
+function out_of_place_assing(res, d, tmp, fct, idc, sz1d, args_d)
+    return tmp .* fct.(idc, sz1d, args_d...)
+end
+
+function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_place_assing!), res, d, tmp, fct, idc, sz1d, args_d)
+    println("in rrule in_place_assing!")
+    y = in_place_assing!(res, d, tmp, fct, idc, sz1d, args_d)
+    # @show collect(y)
+    _, mypullback = rrule_via_ad(config, out_of_place_assing, res, d, tmp, fct, idc, sz1d, args_d)
+
+    # function in_place_assing_pullback(dy) # dy is a tuple of arrays.
+    #     println("in in_place_assing_pullback")
+
+    #     d_idc = mypullback(dy)
+    #     @show size(dy[1])
+    #     @show size(derivatives) # idc
+    #     each_deriv = ntuple((i) -> sum(dy[i] .* derivatives[1]), length(dy))
+    #     @show each_deriv
+    #     # @show dy[1]
+    #     return NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), each_deriv, NoTangent(), NoTangent()
+    #     # return NoTangent(), each_deriv, NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent()
+    # end
+    return y, mypullback # in_place_assing_pullback
+end
+
 
 function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, 
     args...; dims = 1:N,
     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
-    defaults=NamedTuple(),  pos=zero(real(eltype(AT))),
+    defaults=NamedTuple(), pos=zero(real(eltype(AT))),
     offset = sz.÷2 .+1,
     scale = one(real(eltype(AT))),
     factor = one(real(eltype(AT))), 
     kwargs...) where {AT, N}
-    return calculate_separables_nokw(AT, fct, sz, offset, scale, factor, args...; dims=dims, all_axes=all_axes, defaults=defaults, pos=pos, kwargs...)
+
+    extra_args = kwargs_to_args(defaults, kwargs)
+    return calculate_separables_nokw(AT, fct, sz, offset, scale, factor, extra_args..., args...; dims=dims, all_axes=all_axes, defaults=defaults, pos=pos, kwargs...)
 end
 
 function calculate_separables(fct, sz::NTuple{N, Int},  args...; dims=1:N,
         all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz[[dims...]])),
-        pos=zero(real(eltype(DefaultArrType))),
+        defaults=NamedTuple(), pos=zero(real(eltype(DefaultArrType))),
+        offset = sz.÷2 .+1,
+        scale = one(real(eltype(DefaultArrType))),
+        factor = one(real(eltype(DefaultArrType))), 
         kwargs...) where {N}
-    calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)
+    extra_args = kwargs_to_args(defaults, kwargs)
+    calculate_separables(DefaultArrType, fct, sz, extra_args..., args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, factor=factor, kwargs...)
 end
 
 # define custom adjoint for calculate_separables
@@ -115,15 +160,21 @@ end
 # end
 
 #
-# function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables), ::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims = 1:N,
+
+# calculate_separables_nokw(AT, fct, sz, offset, scale, factor, args...; dims=dims, all_axes=all_axes, defaults=defaults, pos=pos, kwargs...)
+# function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw), ::Type{AT}, fct, sz::NTuple{N, Int},
+# function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw), ::Type{AT}, fct, sz::NTuple{N, Int},
+#         offset = sz.÷2 .+1, scale=one(real(eltype(AT))), factor = one(real(eltype(AT)),), args...; dims = 1:N,
 #         all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
-#         defaults = NamedTuple(),  pos=zero(real(eltype(AT))),
-#         offset = sz.÷2 .+1, scale=one(real(eltype(AT))), kwargs...)  where {AT, N}
+#         defaults = NamedTuple(),  pos=zero(real(eltype(AT))), kwargs...)  where {AT, N}
 
-#     println("inside rrule! $(sz), $(dims), $(offset)")
+#     println("inside calculate_separables_nokw rrule! $(sz), $(dims), $(offset)")
 #     # foward pass
-#     y = calculate_separables(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, kwargs...)
+#     y = collect(calculate_broadcasted_nokw(AT, fct, sz, offset, scale, factor, args...;
+#                                   dims=dims, all_axes=all_axes, defaults = defaults, pos=pos, kwargs...))
 
+#     @show size(y)
+#     @show sum(abs2.(y))
 #     # extra_args = kwargs_to_args(defaults, kwarg_n(dims[1], kwargs))
 #     # res[1][:] .= fct.(idc, sz[dims[1]], extra_args..., arg_n(dims[1], args)...)
 
@@ -133,22 +184,41 @@ end
 # #     fct(x, sz, args...; kwargs...), idx)[2](1)[1]
 # #     d_pos_fct = d_off_fct
 
-#     d_off_fct = (idx, sz, args...; kwargs...) -> rrule_via_ad(config, (x) -> 
+#     println("calculating fct gradients")
+#     # d_fct_dx = (idx, sz, args...; kwargs...) -> rrule_via_ad(config, (x) -> 
+#     #             fct(x, sz, args...), idx; kwargs...)[1]
+#     d_offset_fct = (idx, sz, args...; kwargs...) -> rrule_via_ad(config, (x) -> 
 #                 fct(x, sz, args...), idx; kwargs...)[1]
 #     d_scale_fct = (idx, sz, args...; kwargs...) -> idx * rrule_via_ad(config, (x) ->
 #                 fct(x, sz, args...), idx;kwargs...)[1]
-#     d_pos_fct = d_off_fct
+#     d_pos_fct = d_offset_fct
+
+#     all_grad_axes = copy(all_axes)   # generate a different memory buffer for the gradients
 
 #     function calculate_separables_pullback(dy) # dy is the gradient of the output
 #         # multiply by dy?
-#         doffset = calculate_separables(AT, d_off_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = dy, kwargs...)
-#         dscale = 1 #calculate_separables(AT, d_scale_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = 1, kwargs...)
-#         dpos = 1 # calculate_separables(AT, d_pos_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = 1, kwargs...)
+#         println("calculating separables pullback")
+#         @show dy
+#         @show length(dy)
+#         @show sum(abs.(dy))
+#         @show args
+#         @show d_offset_fct.(13.3:0.2:15.3, (20,), args...)
+#         @show offset
+#         @show scale
+#         @show factor
+#         doffset = (factor, factor) .* sum(reshape([dy...], sz) .* collect(calculate_broadcasted_nokw(AT, d_offset_fct, sz, offset, scale, factor, args...; dims=dims, all_axes=all_grad_axes, pos=pos, defaults = defaults, kwargs...)))
+#         @show doffset
+#         dscale = dy # .* collect(calculate_broadcasted_nokw(AT, d_scale_fct, sz, offset, scale, factor, args...; dims=dims, all_axes=all_axes, pos=pos, defaults = defaults, kwargs...))[:]
+#         dfactor = dy
+#         # dpos = 1 # calculate_separables(AT, d_pos_fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, offset=offset, scale=scale, defaults = defaults, factor = 1, kwargs...)
 #         dargs = args;
 #         # It should return the gradient of the inputs
 #         # println(doffset)
-#         return (NoTangent(), NoTangent(), NoTangent(), doffset, dargs...,  NoTangent(), NoTangent(), NoTangent(), dpos, doffset, dscale, NoTangent())
+
+#         # calculate_separables_nokw(AT, fct, sz, offset, scale, factor, args...; dims=dims, all_axes=all_axes, defaults=defaults, pos=pos, kwargs...)
+#         return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dfactor, dargs...,  NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent())
 #     end
+#     @show "returning from pullback"
 #     return y, calculate_separables_pullback
 # end
 
@@ -264,12 +334,26 @@ function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; dims=1:N,
     Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)...))
 end
 
+
+# function calculate_sep_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims=1:N, 
+#     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
+#     pos=zero(real(eltype(DefaultArrType))), operation = *, defaults = nothing, kwargs...) where {AT, N}
+#     # defaults should be evaluated here and filled into args...
+#     return calculate_separables_nokw(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)
+# end
+
+# function calculate_sep_nokw(fct, sz::NTuple{N, Int}, args...; dims=1:N,
+#     all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz[[dims...]])),
+#     pos=zero(real(eltype(DefaultArrType))),  operation = *, defaults = nothing, kwargs...) where {N}
+#     return calculate_separables_nokw(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)
+# end
+
 ### Versions where offst and scale are without keyword arguments
 function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; dims=1:N, 
     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz[[dims...]])),
     pos=zero(real(eltype(DefaultArrType))), operation = *, defaults = nothing, kwargs...) where {AT, N}
     # defaults should be evaluated here and filled into args...
-Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)...))
+    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw(AT, fct, sz, args...; dims=dims, all_axes=all_axes, pos=pos, kwargs...)...))
 end
 
 function calculate_broadcasted_nokw(fct, sz::NTuple{N, Int}, args...; dims=1:N,
@@ -363,8 +447,11 @@ julia> my_gaussian = separable_create(fct, (6,5), (0.5,1.0); pos=(0.1,0.2))
 ```
 """
 function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operation::Function = *, kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
-    res = calculate_separables(TA, fct, sz, args...; kwargs...)
-    operation.(res...)
+    # res = calculate_separables(TA, fct, sz, args...; kwargs...)
+    # operation.(res...)
+    res = similar(TA, sz)
+    res .= calculate_broadcasted(TA, fct, sz, args...; operation=operation, kwargs...)
+    return res
 end
 
 ## the code below seems not type-stable but the code above is. Why?

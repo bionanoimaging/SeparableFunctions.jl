@@ -77,14 +77,21 @@ for F in generate_functions_expr()
                         all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz[[(1:N)...]]))
                     ) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted_nokw(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+
+        # return calculate_broadcasted_nokw(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+        pos=zero(real(eltype(TA)))
+        operation=$(F[5])
+        return calculate_separables_nokw(TA, fct, sz, args...; pos=pos, all_axes=all_axes), operation
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
                         all_axes = (similar_arr_type(Array{$(F[4])}, eltype(Array{$(F[4])}), Val(1)))(undef, sum(sz[[(1:N)...]]))
                     ) where {N}
-        fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+        fct = $(F[3]) # to assign the function to a symbol        
+        # return calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+        pos=zero(real(eltype(DefaultArrType)))
+        operation=$(F[5])
+        return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; pos=pos, all_axes=all_axes), operation
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
@@ -152,7 +159,7 @@ function propagator_col!(arr::AbstractArray{T,N}; Δz=one(eltype(arr)), k_max=0.
     # fac = eltype(arr)(4im * pi * Δz)
     # f(r2) = cispi(sqrt(max(zero(real(eltype(TA))),k2_max - r2)) * (4 * Δz))
     # f(r2) = exp(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
-    fac = eltype(arr)(4pi * Δz)
+    fac = real(eltype(arr))(4pi * Δz)
     f(r2) = cis(sqrt(max(zero(real(eltype(arr))),k2_max - r2)) * fac)
     if length(size(arr)) < 3 || sz[3] == 1
         return calc_radial2_symm!(arr, f; scale=scale); 

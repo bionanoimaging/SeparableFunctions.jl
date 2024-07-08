@@ -28,9 +28,9 @@ module SeparableFunctions
 using NDTools, LazyArrays
 using ImageTransformations, StaticArrays
 using Interpolations
-# using ChainRulesCore # for adjoint definition
-using ZygoteRules
-using Zygote # to use rrule_via_ad
+using ChainRulesCore # for adjoint definition
+# using ZygoteRules
+# using Zygote # to use rrule_via_ad
 
 export calculate_separables, separable_view, separable_create
 export calculate_broadcasted

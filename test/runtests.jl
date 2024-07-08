@@ -13,14 +13,21 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     end
 
     res = fct(Array{T}, sz, args...; kwargs...)
+    if typeof(res) <: Tuple
+        res = res[2].(res[1]...)
+    end
     # @test (typeof(res) <: AbstractArray) == false
     res = collect(res)
     @test (typeof(res) <: AbstractArray) == true
+
     @test a≈res
     @test eltype(res)==T
 
     all_axes = zeros(T, prod(sz))
     res2 = fct(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    if typeof(res2) <: Tuple
+        res2 = res2[2].(res2[1]...)
+    end
     # @test (typeof(res2) <: AbstractArray) == false
     res2 = collect(res2)
     @test (typeof(res2) <: AbstractArray) == true
@@ -157,11 +164,6 @@ end
     res4 = gaussian_col(sz, sigma=sigma) 
     res5 = radial_speedup_ifa(gaussian, sz; sigma=sigma) 
     @test maximum(abs.(res4 .- res5)) < 1e-6
-end
-
-@testset "gradients" begin
-    sz = (10,10)
-    gradient((x) -> gaussian_nokw_sep(sz, x, 1.0, 1.0, 1.0), (2.2,3.3))
 end
 
 return

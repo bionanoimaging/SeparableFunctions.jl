@@ -4,14 +4,15 @@ authors = ["RainerHeintzmann <heintzmann@gmail.com>"]
 version = "0.1.1"
 
 [deps]
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
+PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Thunks = "490da00b-a60c-4ded-a4cf-df7cded56bfa"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
-ZygoteRules = "700de1a5-db45-46bc-99cf-38207098b444"
 
 [compat]
 ImageTransformations = "0.9, 0.10"
@@ -25,6 +26,7 @@ julia = "1"
 [extras]
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [targets]
 test = ["Test", "IndexFunArrays"]
