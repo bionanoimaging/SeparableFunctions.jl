@@ -62,9 +62,9 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # @show idc
 
     # @show extra_args
-    if isa(factor, Number) 
-        factor = ntuple((d) -> factor, lastindex(dims))
-    end
+    # if isa(factor, Number) 
+    #     factor = ntuple((d) -> factor, N)
+    # end
     # @show offset
     # @show extra_args
     # @show args
@@ -76,7 +76,14 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # res = in_place_assing!(res, 1, factor[1], fct, idc, sz[dims[1]], arg_n(dims[1], args))
     #push!(res, collect(reorient(fct.(idc, sz[1], arg_n(1, args)...; kwarg_n(1, kwargs)...), 1, Val(N))))
     # for d = eachindex(dims)
-    ntuple((d) -> 
+
+    # toreturn = (in_place_assing!(res, 1, factor[1], fct, pick_n(dims[1], scale) .* ((start[dims[1]]:start[dims[1]]+sz[dims[1]]-1) .- pick_n(dims[1], pos)), sz[dims[1]], arg_n(dims[1], args, RT)), 
+    #         in_place_assing!(res, 2, factor[2], fct, pick_n(dims[2], scale) .* ((start[dims[2]]:start[dims[2]]+sz[dims[2]]-1) .- pick_n(dims[2], pos)), sz[dims[2]], arg_n(dims[2], args, RT)))
+
+    # idc = start[dims[1]]:start[dims[1]]+sz[dims[1]]-1
+    # @show collect(arg_n(dims[1], args, RT))
+    # toreturn = (fct.(idc, sz[1], collect(arg_n(dims[1], args, RT))...), ones(1,10))
+    toreturn = ntuple((d) -> 
         # idc = pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos))
         # myaxis = collect(fct.(idc,arg_n(d, args)...)) # no need to reorient
         # extra_args = kwargs_to_args(defaults, kwarg_n(dims[d], kwargs))
@@ -88,13 +95,16 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
         #     end
         # end
         # res[d][:] .= tmp .* fct.(idc, sz[dims[d]], arg_n(dims[d], args)...)
-        in_place_assing!(res, d, factor[d], fct, pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos)), sz[dims[d]], arg_n(dims[d], args))
+        in_place_assing!(res, d, factor, fct, pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos)), sz[dims[d]], arg_n(dims[d], args, RT))
+        # out_of_place_assing(res, d, factor[d], fct, pick_n(dims[d], scale) .* ((start[dims[d]]:start[dims[d]]+sz[dims[d]]-1) .- pick_n(dims[d], pos)), sz[dims[d]], arg_n(dims[d], args, RT))
 
         # LazyArray representation of expression
         # push!(res, myaxis)
-        , lastindex(dims)) # Vector{AT}()
+        , N) # Vector{AT}()
+    # @show toreturn[1]
     # end
-    return res
+    return toreturn
+    # return res
 end
 
 
@@ -106,19 +116,20 @@ function in_place_assing!(res, d, tmp, fct, idc, sz1d, args_d)
 end
 
 function out_of_place_assing(res, d, tmp, fct, idc, sz1d, args_d)
-    return tmp .* fct.(idc, sz1d, args_d...)
+    println("oop assign!")
+    return reorient(tmp .* fct.(idc, sz1d, args_d...), Val(d))
 end
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_place_assing!), res, d, tmp, fct, idc, sz1d, args_d)
     println("in rrule in_place_assing!")
     y = in_place_assing!(res, d, tmp, fct, idc, sz1d, args_d)
     # @show collect(y)
-    _, mypullback = rrule_via_ad(config, out_of_place_assing, res, d, tmp, fct, idc, sz1d, args_d)
+    _, in_place_assing_pullback = rrule_via_ad(config, out_of_place_assing, res, d, tmp, fct, idc, sz1d, args_d)
 
     # function in_place_assing_pullback(dy) # dy is a tuple of arrays.
     #     println("in in_place_assing_pullback")
 
-    #     d_idc = mypullback(dy)
+    #     # d_idc = mypullback(dy)
     #     @show size(dy[1])
     #     @show size(derivatives) # idc
     #     each_deriv = ntuple((i) -> sum(dy[i] .* derivatives[1]), length(dy))
@@ -127,7 +138,7 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_
     #     return NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), each_deriv, NoTangent(), NoTangent()
     #     # return NoTangent(), each_deriv, NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent()
     # end
-    return y, mypullback # in_place_assing_pullback
+    return y, in_place_assing_pullback # in_place_assing_pullback
 end
 
 

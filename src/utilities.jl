@@ -28,8 +28,11 @@ julia> collect(SeparableFunctions.arg_n(2, args))
  5
  ```
 """
+function arg_n(n, args, T::Type)
+    return Tuple(T(pick_n(n, v)) for v in args)
+end
 function arg_n(n, args)
-    return (pick_n(n, v) for v in args)
+    return Tuple(pick_n(n, v) for v in args)
 end
 
 """ 
