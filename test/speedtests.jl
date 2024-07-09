@@ -121,23 +121,26 @@ if (false)
     using Zygote
     using SeparableFunctions
     @testset "gradients" begin
-        sz = (10, 10)
+        sz = (1000, 1000)
         offset = (2.2,3.3)
         # collect(gaussian_nokw_sep(sz, offset, 1.0, 1.0, 1.0))
         # loss(x) = sum(abs2.(gaussian_nokw_sep(sz, x, 1.0, 1.0, 1.0)))
         dat = rand(sz...)
-        g, op = gaussian_nokw_sep(sz, offset, 1.0, 1.0, 1.0)
-        op.(g...)
+        bw = gaussian_nokw_sep(sz, offset, 1.0, 1.0)
+        bw .+ 0
         # https://fluxml.ai/Zygote.jl/latest/limitations
         # Zygote.buffer
         tmp_mem = similar(dat, prod(sz))
-        function loss(x)
-            g, op = gaussian_nokw_sep(sz, x, 1.0, 1.0, 1.0; all_axes=tmp_mem)
-            sum(abs2.(op.(g...) .- dat))
+        function loss(off)
+            # g, op = gaussian_nokw_sep(sz, off, 1.0, 1.0; all_axes=tmp_mem)
+            # bw = Broadcast.instantiate(Broadcast.broadcasted(op, g...))
+            bw = gaussian_nokw_sep(sz, off, 1.0, 1.0; all_axes=tmp_mem)
+            # sum(abs2.(op.(g...) .- dat))
+            sum(abs2.(bw .- dat))
         end
         @time loss(offset)
         # loss(x) = gaussian_nokw_sep(sz, x, 1.0, 1.0, 1.0)[3,3] # problems
-        gradient(loss , offset)[1]
+        @time gradient(loss, offset)[1]
 
         sz = (10,10)
         offset = (2.2,3.3)
