@@ -45,11 +45,11 @@ end
     sz = (13,15)
     fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
     offset = (2.2, -2.2)  ; scale = (1.1, 1.2); 
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), pos = (0.1,0.2), offset=offset, scale=scale)
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset=offset.+(0.1,0.2), scale=scale)
     @test size(.*(gauss_sep...)) == sz
     # test with preallocated array
     all_axes = zeros(Float32, prod(sz))
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), all_axes = all_axes, pos = (0.0,0.0))
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), all_axes = all_axes)
     # @test all_axes[7] ≈ 1.0
     # @test all_axes[13+8] ≈ 1.0
 end

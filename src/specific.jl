@@ -1,21 +1,21 @@
-# function gaussian_sep(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {TA, N}
+# function gaussian_sep(::Type{TA}, sz::NTuple{N, Int}, sigma,; offset=sz.÷2 .+1) where {TA, N}
 #     invsigma22 = 1 ./(2 .*sigma.^2)
 #     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_create(TA, fct, sz, invsigma22, pos; offset=offset)
+#     separable_create(TA, fct, sz, invsigma22; offset=offset)
 # end
 
-# function gaussian_sep(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {N}
-#     gaussian_sep(DefaultArrType, sz, sigma, pos; offset=offset)
+# function gaussian_sep(sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {N}
+#     gaussian_sep(DefaultArrType, sz, sigma; offset=offset)
 # end
 
-# function gaussian_sep_lz(::Type{TA}, sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {TA, N}
+# function gaussian_sep_lz(::Type{TA}, sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {TA, N}
 #     invsigma22 = 1 ./(2 .*sigma.^2)
 #     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_view(TA, fct, sz, invsigma22, pos; offset=offset)
+#     separable_view(TA, fct, sz, invsigma22; offset=offset)
 # end
 
-# function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, pos=zeros(Float32,N); offset=sz.÷2 .+1) where {N}
-#     gaussian_sep_lz(DefaultArrType, sz, sigma, pos; offset=offset)
+# function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {N}
+#     gaussian_sep_lz(DefaultArrType, sz, sigma; offset=offset)
 # end
 
 function generate_functions_expr()
@@ -79,9 +79,8 @@ for F in generate_functions_expr()
         fct = $(F[3]) # to assign the function to a symbol
 
         return calculate_broadcasted_nokw(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
-        # pos=zero(real(eltype(TA)))
         # operation=$(F[5])
-        # return calculate_separables_nokw(TA, fct, sz, args...; pos=pos, all_axes=all_axes), operation
+        # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operation
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
@@ -89,9 +88,8 @@ for F in generate_functions_expr()
                     ) where {N}
         fct = $(F[3]) # to assign the function to a symbol        
         return calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
-        # pos=zero(real(eltype(DefaultArrType)))
         # operation=$(F[5])
-        # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; pos=pos, all_axes=all_axes), operation
+        # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operation
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
