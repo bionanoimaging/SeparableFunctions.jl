@@ -26,8 +26,9 @@ In general arguments can be supplied as single scalar values or vectors. If a sc
 """
 module SeparableFunctions
 using NDTools, LazyArrays
-using ImageTransformations, StaticArrays
-using Interpolations
+using ImageTransformations # for warp used in the radial_speedup_ifa code
+using StaticArrays # SVector in some of the radial_speedup_ifa code
+using Interpolations # for OnGrid in the radial_speedup_ifa code
 using ChainRulesCore # for adjoint definition
 # using ZygoteRules
 # using Zygote # to use rrule_via_ad
