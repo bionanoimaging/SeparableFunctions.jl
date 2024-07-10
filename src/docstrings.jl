@@ -6,7 +6,6 @@ the `_sep` version an iterable of one-dimensional but oriented arrays, which can
 + `TA`:     optionally an array type can be supplied. The default is Array{Float32}
 + `sz`:     size of the result array
 
-+ `pos`:    position of the gaussian in relationship to the center defined by `offset`
 + `offset`: center position of the array
 "
 
@@ -17,7 +16,7 @@ returns_sep = "returns a Broadcasted iterable with several one-dimensional array
 gaussian_docstring = "creates a multidimensional Gaussian by exployting separability speeding up the calculation."
 
 """
-    gaussian_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -26,8 +25,8 @@ $(returns_col)
 
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); sigma = (0.5, 1.0);
-julia> my_gaussian = gaussian_col((6,5); sigma=sigma, pos=pos)
+julia> pos = (4,3) .+ (1.1, 0.2); sigma = (0.5, 1.0); 
+julia> my_gaussian = gaussian_col((6,5); sigma=sigma, offset = pos)
 6×5 Matrix{Float32}:
     2.22857f-16  1.21991f-15  2.4566f-15   1.81989f-15  4.95978f-16
     3.99823f-10  2.18861f-9   4.40732f-9   3.26502f-9   8.89822f-10
@@ -40,7 +39,7 @@ julia> my_gaussian = gaussian_col((6,5); sigma=sigma, pos=pos)
 gaussian_col
 
 """
-    gaussian_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -50,7 +49,7 @@ $(returns_lz)
 gaussian_lz
 
 """
-    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -62,7 +61,7 @@ gaussian_sep
 normal_docstring = "creates a multidimensional normalized Gaussian by exployting separability speeding up the calculation. The integral of the multidimensional array, if it where infinite, is normalized to one."
 
 """
-    normal_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -70,8 +69,8 @@ $(normal_docstring)$(common_docstring)
 $(returns_col)
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); sigma = (0.5, 1.0);
-julia> my_normal = normal_col((6,5); sigma=sigma, pos=pos)
+julia> pos = (4,3) .+ (1.1, 0.2); sigma = (0.5, 1.0);
+julia> my_normal = normal_col((6,5); sigma=sigma, offset=pos)
 6×5 Matrix{Float32}:
     7.09377f-17  3.88309f-16  7.81959f-16  5.79289f-16  1.57875f-16
     1.27268f-10  6.96656f-10  1.40289f-9   1.03929f-9   2.83239f-10
@@ -84,7 +83,7 @@ julia> my_normal = normal_col((6,5); sigma=sigma, pos=pos)
 normal_col
 
 """
-    normal_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -94,7 +93,7 @@ $(returns_lz)
 normal_lz
 
 """
-    normal_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -107,14 +106,14 @@ normal_sep
 rr2_docstring = "yields the absolute square of the distance to the zero-position."
 
 """
-    rr2_col([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_col([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_col)
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); 
-julia> my_rr2 = rr2_col((6,5); pos=pos)
+julia> pos = (3,4) .+ (1.1, 0.2); 
+julia> my_rr2 = rr2_col((6,5); offset=pos)
 6×5 Matrix{Float32}:
     21.65  18.25  16.85  17.45  20.05
     14.45  11.05   9.65  10.25  12.85
@@ -127,7 +126,7 @@ julia> my_rr2 = rr2_col((6,5); pos=pos)
 rr2_col
 
 """
-    rr2_lz([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_lz([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_lz)
@@ -135,7 +134,7 @@ $(returns_lz)
 rr2_lz
 
 """
-    rr2_sep([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_sep([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_sep)
@@ -146,14 +145,14 @@ rr2_sep
 sinc_docstring = "yields the outer product of sinc functions. This corresponds to the diffraction pattern of a rectangular aperture. Note that it is not circularly symmetric."
 
 """
-    sinc_col([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_col([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_col)
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); 
-julia> my_sinc = sinc_col((6,5); pos=pos)
+julia> pos = (3,4) .+ (1.1, 0.2); 
+julia> my_sinc = sinc_col((6,5); offset=pos)
 6×5 Matrix{Float32}:
   0.0020403   -0.00374056   0.0224433   0.00561083  -0.0024937
  -0.00269847   0.00494719  -0.0296831  -0.00742078   0.00329812
@@ -166,7 +165,7 @@ julia> my_sinc = sinc_col((6,5); pos=pos)
 sinc_col
 
 """
-    sinc_lz([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_lz([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_lz)
@@ -174,7 +173,7 @@ $(returns_lz)
 sinc_lz
 
 """
-sinc_sep([::Type{TA},] sz::NTuple{N, Int}; pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+sinc_sep([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_sep)
@@ -185,7 +184,7 @@ sinc_sep
 box_docstring = "creates a Boolean box, being True inside and False outside. The side-length of the box can be defined via the argument `boxsize`."
 
 """
-    box_col([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_col([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -193,8 +192,8 @@ $(box_docstring)$(common_docstring)
 $(returns_col)
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); 
-julia> my_box = box_col((6,5); pos=pos)
+julia> pos = (3,4) .+ (1.1, 0.2); 
+julia> my_box = box_col((6,5); offset=pos)
 6×5 BitMatrix:
  0  0  0  0  0
  0  0  0  0  0
@@ -207,7 +206,7 @@ julia> my_box = box_col((6,5); pos=pos)
 box_col
 
 """
-    box_lz([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_lz([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -217,7 +216,7 @@ $(returns_lz)
 box_lz
 
 """
-box_sep([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+box_sep([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -230,14 +229,14 @@ box_sep
 ramp_docstring = "creates an N-dimensional ramp along the gradient-direction defined by `slope`. Note that this disagrees with the nomenclature of the ramp-function defined in `IndexFunArrays.jl`."
 
 """
-    ramp_col([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_col([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
 + `slope`:  a vector defining the N-dimensional gradient of the ramp.
 $(returns_col)
 #Example
-julia> my_ramp = ramp_col((6,5); slope=(0.0,0.5), pos=pos)
+julia> my_ramp = ramp_col((6,5); slope=(0.0,0.5), offset=(3,4) .+ pos)
 6×5 Matrix{Float32}:
  -1.1  -0.6  -0.1  0.4  0.9
  -1.1  -0.6  -0.1  0.4  0.9
@@ -250,7 +249,7 @@ julia> my_ramp = ramp_col((6,5); slope=(0.0,0.5), pos=pos)
 ramp_col
 
 """
-    ramp_lz([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_lz([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -260,7 +259,7 @@ $(returns_lz)
 ramp_lz
 
 """
-    ramp_sep([::Type{TA},] sz::NTuple{N, Int}; slope, pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_sep([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -274,7 +273,7 @@ exp_ikx_docstring = "yield an `exp.(1im .* k .* Δx)` function. A scaling of one
 compared to the version in `IndexFunArray.jl`. Here the default scaling of 1.0 corresponds to the default scaling of ScaFT in `IndexFunArrays.jl`."
 
 """
-    exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 
@@ -282,8 +281,8 @@ $(exp_ikx_docstring)$(common_docstring)
 $(returns_col)
 #Example
 ```jldoctest
-julia> pos = (1.1, 0.2); 
-julia> my_exp_ikx = exp_ikx_col((6,5); shift_by=(1.0,0.0), pos=pos)
+julia> pos = (3,4).+(1.1, 0.2); 
+julia> my_exp_ikx = exp_ikx_col((6,5); shift_by=(1.0,0.0), offset=pos)
 6×5 Matrix{ComplexF32}:
  -0.406737-0.913545im  -0.406737-0.913545im  -0.406737-0.913545im  -0.406737-0.913545im  -0.406737-0.913545im
  -0.994522-0.104528im  -0.994522-0.104528im  -0.994522-0.104528im  -0.994522-0.104528im  -0.994522-0.104528im
@@ -296,7 +295,7 @@ julia> my_exp_ikx = exp_ikx_col((6,5); shift_by=(1.0,0.0), pos=pos)
 exp_ikx_col
 
 """
-    exp_ikx_lz([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_lz([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -306,7 +305,7 @@ $(returns_lz)
 exp_ikx_lz
 
 """
-    exp_ikx_sep([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), pos=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_sep([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 

@@ -80,7 +80,7 @@ function copy_last_dim!(arr::AbstractArray{T,N}) where{T,N}
     lin_size = linear[sz...] - lin_mid
     # 1D mirror-copy irgnoring the mistakes:  
     @views arr[lin_mid+1:end] .= arr[lin_mid-1:-1:lin_mid-lin_size]
-    dims = length(sz)
+    dims = N
     if any(iseven.(sz[1:end-1]))
         dim_size = sz .- mid_pos
         for d=1:dims-1
