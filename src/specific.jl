@@ -74,7 +74,7 @@ for F in generate_functions_expr()
     end
  
     @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
-                        all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz[[(1:N)...]]))
+                        all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz))
                     ) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
 
@@ -84,7 +84,7 @@ for F in generate_functions_expr()
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
-                        all_axes = (similar_arr_type(Array{$(F[4])}, eltype(Array{$(F[4])}), Val(1)))(undef, sum(sz[[(1:N)...]]))
+                        all_axes = (similar_arr_type(Array{$(F[4])}, eltype(Array{$(F[4])}), Val(1)))(undef, sum(sz))
                     ) where {N}
         fct = $(F[3]) # to assign the function to a symbol        
         return calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
