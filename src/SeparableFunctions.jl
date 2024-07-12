@@ -33,7 +33,7 @@ using ChainRulesCore # for adjoint definition
 # using ZygoteRules
 # using Zygote # to use rrule_via_ad
 
-export calculate_separables_nokw, separable_view, separable_create
+export calculate_separables_nokw, calculate_separables, separable_view, separable_create
 export calculate_broadcasted
 export copy_corners!
 export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!

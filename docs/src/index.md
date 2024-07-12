@@ -16,6 +16,7 @@ SeparableFunctions
 ## Generic Ways to Create Seperable and Radial Functions 
 ```@docs
 calculate_broadcasted
+calculate_separables
 calculate_separables_nokw
 separable_view
 separable_create
