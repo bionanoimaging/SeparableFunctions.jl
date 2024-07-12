@@ -7,17 +7,24 @@ They all possess a similar interface and exist in three variants:
 ```@docs
 gaussian_sep
 gaussian_col
+SeparableFunctions.gaussian_lz
 normal_sep
 normal_col
+SeparableFunctions.normal_lz
 ramp_sep
 ramp_col
+SeparableFunctions.ramp_lz
 rr2_sep
 rr2_col
+SeparableFunctions.rr2_lz
 box_sep
 box_col
+SeparableFunctions.box_lz
 sinc_sep
 sinc_col
+SeparableFunctions.sinc_lz
 exp_ikx_sep
 exp_ikx_col
+SeparableFunctions.exp_ikx_lz
 ```
 

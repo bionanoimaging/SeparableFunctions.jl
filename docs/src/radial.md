@@ -9,4 +9,9 @@ propagator_col
 propagator_col!
 phase_kz_col
 phase_kz_col!
+SeparableFunctions.calc_radial2_symm 
+SeparableFunctions.kwargs_to_args 
+SeparableFunctions.radial_speedup 
+SeparableFunctions.calc_radial2_symm! 
+SeparableFunctions.radial_speedup_ifa 
 ```
