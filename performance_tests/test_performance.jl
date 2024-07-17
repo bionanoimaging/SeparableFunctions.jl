@@ -262,3 +262,16 @@ a = rand(sz...);
 @time c = collect(exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- (i*i+j*j))) .* 1f0) for i=1:sz[1], j=1:sz[2]); # 0.11 sec
 @time c = map((x) -> exp.(1f0im .* sqrt.(max.(0f0, 100.0f0 .- x)) .* 1f0), .+(myrr2...)); # 0.06
 
+################
+#### some gradient tests
+using Zygote 
+
+sz = (10,10)
+dat = rand(sz...)
+loss = (off) -> sum(abs2.(gaussian_nokw_sep(sz, off, 1.0, (1.0,1.0)) .- dat))
+mystart = (1.1,2.2)
+loss(mystart)
+
+
+g = gradient(loss, mystart); 
+
