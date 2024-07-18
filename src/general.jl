@@ -252,23 +252,57 @@ end
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw_hook), ::Type{AT}, fct, sz::NTuple{N, Int}, args...; kwargs...) where {AT, N}
     # println("in rrule calculate_separables_nokw_hook")
-    y = calculate_separables_nokw(AT, fct, sz, args...; kwargs...)
+    # y = calculate_separables_nokw(AT, fct, sz, args...; kwargs...)
     # @show typeof(y)
     # @show collect(y)
-    _, calculate_separables_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw, AT, fct, sz, args...; kwargs...)
+    # _, calculate_separables_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw, AT, fct, sz, args...; kwargs...)
 
     # fct signature is like this: (x, sz, sigma)-> exp(-x^2/(2*sigma^2)   . args has offset, scale, and further args
-    ids = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), Ref(args[2]))
+    # ids = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), Ref(args[2]))
+    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), N) # offset==args[1] and scale==args[2]
     ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), one(eltype(AT)))
-    # wrap each function accordingly, yieldin a tuple of fuctions fcts
+    # the above are NOT oriented!
+
+    # wrap each function accordingly, yieldin a tuple of fuctions fcts to be applied to arrays
     fcts = ntuple((d) -> ((ids, sz, args...) -> fct.(ids, sz, args...)), N)
     # calcuate a pullback for each of the dimensions via broadcast. singlton arguments are automatically broadcasted:
-    # Note that ids as also a tuple of dimensions of ranges
-    calculate_fct_value_pullbacks = rrule_via_ad.(config, fcts, ids, sz, args[3:end]...)
+    # Note that ids as also a tuple of dimensions of ranges.
+    # Note that this does only create th pullbacks but does not call them yet!  
+    # calculate_fct_value_pullbacks = rrule_via_ad.(config, fcts, ids, sz, args[3:end]...)
+    # println("finished early pullback")
+
+    # println("explicit call")
+    # @show typeof(fcts)
+    # @show typeof(fct)
+    # @show typeof(config)
+    # calculate_fct_value_pullbacks = ntuple((d) -> rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0), N)
+    val_pullback = (x, sz, args) -> begin tmp = rrule_via_ad(config, fct, x, sz, args...); (tmp[1], tmp[2](one(eltype(AT)))) end
+    val_pullbacks = ntuple((d)-> val_pullback.(ids[d], sz[d], pick_n.(d, args[3:end])), N)
+    # @show val_pullbacks
+    # have to be oriented by hand:
+    y = ntuple((d) -> reorient(map(p -> p[1], val_pullbacks[d]), Val(d),N), N)
+    df_dids = ntuple((d) -> map(p -> p[2][2], val_pullbacks[d]), N)
+    df_dargs = ntuple((a) -> ntuple((d) -> map(p -> p[2][3+a], val_pullbacks[d]), N), length(args)-2)
+    # @show df_dargs
+    # dx_dids = ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), N)
+    # dx_dids = ntuple((d)-> dx_raw.(ids[d]), N)
+
+    # dargs_dids = ntuple((a) -> ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), N), length(args[3:end])
+
+
+    # dargs_raw = ntuple((d)-> 
+    #                 rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0)[2](one(eltype(AT))), N)
+    # @show y
+    # @show dx_dids
+    # println("expicit end")
+
 
     # sep_diff = calculate_separables_nokw(AT, calculate_fct_pullbacks)
 
     function calculate_separables_nokw_hook_pullback(dy)
+        # println("in nokw pullback")
+        # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), [0.2f0, 0.3f0], NoTangent(), NoTangent())
+
         # println("in calculate_separables_nokw_hook_pullback") # sz is (10, 20)
         # @show dy 
         # @show typeof(dy)  # Tangent{Any, Tuple{Matrix{Float32}, Matrix{Float32}}}
@@ -284,12 +318,15 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         # both of the derivatives below are based on the ids- (also called x-) derivative. The first two refers to the second return argument being the pullback 
         # x = scale * (ids_raw - offset), so the derivative dx/doffst = - scale, dx/dscale = ids_raw - offset
         # dy(f(x(offset)))/doffset = dy(x)/df * dx/doffset = df(x)/dx * -scale
-        dx_dids = ntuple((d)->calculate_fct_value_pullbacks[d][2](one(eltype(AT)))[2], N)
-        doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * (dy[d][:]' * dx_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # dx_dids = ntuple((d)->calculate_fct_value_pullbacks[d][2](one(eltype(AT)))[2], N)
+        # dx_dids = dargs_raw[1]
+        doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * (dy[d][:]' * df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
         doffset = length(args[1]) == 1 ? sum(doffset) : doffset
         # @show doffset  
-        dscale = optional_convert(args[2], ntuple((d) -> ((@view dy[d][:])' * (ids_offset_only[d] .* dx_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
+        dscale = optional_convert(args[2], ntuple((d) -> ((@view dy[d][:])' * (ids_offset_only[d] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
         dscale = (length(args[2]) == 1) ? sum(dscale) : dscale
+        # @show myres[6]
+        # @show dscale
         # @show myres[6] # 9.438228607177734 # scale
         # @show dscale
         # dy(f(x, arg)/darg = dy(x)/df * df / darg 
@@ -299,7 +336,15 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         #             N), # ids @ offset the -1 is since the argument of fct is idx-offset
         #     length(args)-2) 
         # dargs = ntuple((argno) -> ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N), length(args)-2) 
-        dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N)), length(args)-2) 
+
+        # dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N)), length(args)-2) 
+
+        # dargs = ntuple((argno) -> NoTangent(), length(args)-2) 
+
+        dargs = ntuple((argno) -> optional_convert(args[1], ntuple((d) -> (@view dy[d][:])' * df_dargs[argno][d], N)), length(args)-2) 
+        # @show myres[7]
+        # @show dargs
+
         # @show myres[7] # Tangent{Tuple{Float64, Float64}}((-4.5020714f0, -4.9361587f0) # sigma
         # @show dargs
         return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dargs...)

@@ -47,8 +47,8 @@ DefaultArrType = Array{DefaultResElType}
 DefaultComplexArrType = Array{complex(DefaultResElType)}
 
 include("utilities.jl")
-include("general.jl")
 include("specific.jl")
+include("general.jl")
 include("radial.jl")
 include("exp_iterate.jl")
 include("docstrings.jl")

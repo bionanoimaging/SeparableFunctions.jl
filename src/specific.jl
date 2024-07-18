@@ -17,6 +17,7 @@
 # function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {N}
 #     gaussian_sep_lz(DefaultArrType, sz, sigma; offset=offset)
 # end
+using ChainRulesCore
 
 function generate_functions_expr()
     # offset and scale is already wrapped in the generator function
@@ -29,7 +30,10 @@ function generate_functions_expr()
         # This means that this argument can alternatively be supplied as a non-named argument and it will still work.
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         # FunctionName, kwarg_names, no_kwargs_function_definition, default_return_type, default_separamble_operator
-        (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2))), Float32, *),
+        (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2))), Float32, *, 
+            :((f, x, sz, sigma) -> -x/sigma^2 * f),
+            :((f, x, sz, sigma) -> x^2/sigma^3 * f),
+            ), 
         (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
         (:(sinc), NamedTuple(), :((x,sz) -> sinc(x)), Float32, *),
         # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
@@ -53,6 +57,30 @@ end
 for F in generate_functions_expr() 
     # default functions with offset and scaling behavior
  
+    # define the _raw function
+    @eval function $(Symbol(F[1], :_raw))(x, sz, args...)
+        return $(F[3])(x, sz, args...) 
+    end
+    # just the raw version of the function
+    @eval export $(Symbol(F[1], :_raw))
+
+    if (length(F) >= 6) # a gradient definition was provided explicitely
+        @show "creating rrule for $(Symbol(F[1], :_raw)) "
+        @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
+        # @eval function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(gaussian_raw), args...; kwargs...) 
+            # println("in rrule raw")
+            y = $(Symbol(F[1], :_raw))(x, sz, args...; kwargs...) # to assign the function to a symbol
+            function mypullback(dy)
+                # println("pb")
+                mydx =  dy * $(F[6])(y, x, sz, args...; kwargs...)
+                targ = dy * $(F[7])(y, x, sz, args...; kwargs...)
+                return NoTangent(), mydx, NoTangent(), targ
+            end
+            return y, mypullback
+        end
+        @show "added rrule for $(Symbol(F[1], :_raw))"
+    end
+
     @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
         separable_create(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
@@ -72,13 +100,15 @@ for F in generate_functions_expr()
         fct = $(F[3]) # to assign the function to a symbol
         calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
- 
+
+
     @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
                         all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz))
                     ) where {TA, N}
-        fct = $(F[3]) # to assign the function to a symbol
+        # fct = $(F[3]) # to assign the function to a symbol
 
-        return calculate_broadcasted_nokw(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+        # @show "call"
+        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
         # operation=$(F[5])
         # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operation
     end
@@ -86,8 +116,9 @@ for F in generate_functions_expr()
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
                         all_axes = (similar_arr_type(Array{$(F[4])}, eltype(Array{$(F[4])}), Val(1)))(undef, sum(sz))
                     ) where {N}
-        fct = $(F[3]) # to assign the function to a symbol        
-        return calculate_broadcasted_nokw(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
+        # fct = $(F[3]) # to assign the function to a symbol        
+        # @show "call2"
+        return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
         # operation=$(F[5])
         # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operation
     end

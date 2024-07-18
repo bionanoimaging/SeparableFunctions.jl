@@ -264,14 +264,20 @@ a = rand(sz...);
 
 ################
 #### some gradient tests
+using SeparableFunctions
 using Zygote 
 
 sz = (10,10)
-dat = rand(sz...)
-loss = (off) -> sum(abs2.(gaussian_nokw_sep(sz, off, 1.0, (1.0,1.0)) .- dat))
-mystart = (1.1,2.2)
-loss(mystart)
+# sz = (64,64)
+dat = rand(Float32, sz...)
+loss = (off, sigma) -> sum(abs2.(gaussian_nokw_sep(sz, off, 1.0f0, sigma) .- dat))
+# mystart = (1.1f0,2.2f0)
+mystart = [1.1f0,2.2f0]
+mysigma = [2.0f0, 3.0f0]
+loss(mystart, mysigma)
 
 
-g = gradient(loss, mystart); 
+g = gradient(loss, mystart, mysigma); 
+
+gradient(gaussian_raw, 1.0, 2.0, 3.0)
 
