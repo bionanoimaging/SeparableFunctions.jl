@@ -30,17 +30,32 @@ function generate_functions_expr()
         # This means that this argument can alternatively be supplied as a non-named argument and it will still work.
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         # FunctionName, kwarg_names, no_kwargs_function_definition, default_return_type, default_separamble_operator
-        (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2))), Float32, *, 
-            :((f, x, sz, sigma) -> -x/sigma^2 * f),
-            :((f, x, sz, sigma) -> x^2/sigma^3 * f),
+        (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp.(.-x.^2 ./(2*sigma^2))), Float32, *, 
+            :((f, x, sz, sigma) -> .-x./sigma^2 .* f),
+            :((f, x, sz, sigma) -> x.^2 ./sigma^3 .* f)
             ), 
-        (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2 .* sigma^2)) / (sqrt(typeof(x)(2pi))*sigma)), Float32, *),
-        (:(sinc), NamedTuple(), :((x,sz) -> sinc(x)), Float32, *),
+        (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp.(.- x.^2 ./(2*sigma^2)) ./ (sqrt(eltype(x)(2pi))*sigma)), Float32, *,
+            :((f, x, sz, sigma) -> .-x./sigma^2 .* f),
+            :((f, x, sz, sigma) -> (x.^2 ./sigma^3 .+ 1/sigma) .* f)
+            ),
+        (:(sinc), NamedTuple(), :((x,sz) -> sinc.(x)), Float32, *,
+            :((f, x, sz) -> ifelse.(x .== zero(eltype(x)), zeros(eltype(x), size(x)), (cospi.(x) .- f)./x))
+            ),
         # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
-        (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis(x*(-typeof(x)(2pi)*shift_by/sz))), ComplexF32, *),
-        (:(ramp), (slope=0,), :((x,sz, slope) -> slope*x), Float32, +), # different meaning than IFA ramp
-        (:(rr2), NamedTuple(), :((x,sz) -> (x*x)), Float32, +),
-        (:(box), (boxsize=nothing,), :((x,sz, boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *),
+        (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis.(x.*(-eltype(x)(2pi)*shift_by/sz))), ComplexF32, *,
+            :((f, x, sz, shift_by) -> (-eltype(x)(2pi)*shift_by/sz) .* f),
+            :((f, x, sz, shift_by) -> (-eltype(x)(2pi)/sz) .*x .* f)
+            ),
+        (:(ramp), (slope=0,), :((x,sz, slope) -> slope.*x), Float32, +,
+            :((f, x, sz, slope) ->  slope),
+            :((f, x, sz, slope) ->  x)
+            ), # different meaning than IFA ramp
+        (:(rr2), NamedTuple(), :((x, sz) -> (x.*x)), Float32, +,
+            :((f, x, sz) ->  2 .* x)
+            ),
+        (:(box), (boxsize=nothing,), :((x, sz, boxsize=sz/2) -> abs.(x) .<= (boxsize/2)), Bool, *,
+            :((f, x, sz) ->  one(eltype(x)))
+            ),
     ]
     return functions
 end
@@ -64,21 +79,43 @@ for F in generate_functions_expr()
     # just the raw version of the function
     @eval export $(Symbol(F[1], :_raw))
 
-    if (length(F) >= 6) # a gradient definition was provided explicitely
-        @show "creating rrule for $(Symbol(F[1], :_raw)) "
+    if (length(F) == 6) # a gradient definition was provided explicitely
+        # @show "creating rrule for $(Symbol(F[1], :_raw)) "
+        @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz; kwargs...) 
+            # println("in rrule raw")
+            y = $(Symbol(F[1], :_raw))(x, sz; kwargs...) # to assign the function to a symbol
+            function mypullback(dy)
+                mydx =  dy .* $(F[6])(y, x, sz; kwargs...)
+                return NoTangent(), mydx, NoTangent()
+            end
+            return y, mypullback
+        end
+        # @show "added rrule for $(Symbol(F[1], :_raw))"
+    end
+    if (length(F) == 7) # a gradient definition was provided explicitely
+        # @show "creating rrule for $(Symbol(F[1], :_raw)) "
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
-        # @eval function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(gaussian_raw), args...; kwargs...) 
             # println("in rrule raw")
             y = $(Symbol(F[1], :_raw))(x, sz, args...; kwargs...) # to assign the function to a symbol
             function mypullback(dy)
                 # println("pb")
-                mydx =  dy * $(F[6])(y, x, sz, args...; kwargs...)
-                targ = dy * $(F[7])(y, x, sz, args...; kwargs...)
-                return NoTangent(), mydx, NoTangent(), targ
+                # @show dy
+                # @show $(F[6])(y, x, sz, args...; kwargs...)
+                mydx =  dy .* $(F[6])(y, x, sz, args...; kwargs...)
+                # targ = ntuple(d -> begin
+                #     mydarg = F[6+d]
+                #     dy .* $(mydarg)(y, x, sz, args...; kwargs...)
+                #     end, length(args))
+                # @show size($(F[7])(y, x, sz, args...; kwargs...))
+                # @show dy
+                # @show dy .* $(F[7])(y, x, sz, args...; kwargs...)
+                mydarg = dot(dy, $(F[7])(y, x, sz, args...; kwargs...)) 
+                # mydarg = sum(dy .* $(F[7])(y, x, sz, args...; kwargs...)) 
+                return NoTangent(), mydx, NoTangent(), mydarg
             end
             return y, mypullback
         end
-        @show "added rrule for $(Symbol(F[1], :_raw))"
+        # @show "added rrule for $(Symbol(F[1], :_raw))"
     end
 
     @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
@@ -100,7 +137,6 @@ for F in generate_functions_expr()
         fct = $(F[3]) # to assign the function to a symbol
         calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
     end
-
 
     @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
                         all_axes = (similar_arr_type(TA, eltype(TA), Val(1)))(undef, sum(sz))

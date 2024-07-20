@@ -30,6 +30,7 @@ using ImageTransformations # for warp used in the radial_speedup_ifa code
 using StaticArrays # SVector in some of the radial_speedup_ifa code
 using Interpolations # for OnGrid in the radial_speedup_ifa code
 using ChainRulesCore # for adjoint definition
+using LinearAlgebra # for dot
 # using ZygoteRules
 # using Zygote # to use rrule_via_ad
 

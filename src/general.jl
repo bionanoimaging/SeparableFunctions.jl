@@ -19,7 +19,7 @@ This function is used in `separable_view` and `separable_create`.
 
 #Example:
 ```julia
-julia> fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
+julia> fct = (r, sz, sigma)-> exp.(.-r.^2/(2*sigma^2))
 julia> gauss_sep = SeparableFunctions.calculate_separables_nokw(Array{Float32}, fct, (6,5), (0.5,1.0), 1.0, 1.0)
 2-element Vector{Array{Float32}}:
  [4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;]
@@ -43,14 +43,14 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     RT = real(float(eltype(AT)))
     offset = isnothing(offset) ? sz.÷2 .+1 : RT.(offset)
     scale = isnothing(scale) ? one(real(eltype(RT))) : RT.(scale)
-    # start = ntuple((d)->1, N) # 1 .- offset
+    # start = ntuple((d)->1, Val(N)) # 1 .- offset
 
     # allocate a contigous memory to be as cash-efficient as possible and dice it up below
-    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), d, Val(N)), N) # Vector{AT}()
+    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), Val(d), Val(N)), Val(N)) # Vector{AT}()
 
     toreturn = ntuple((d) -> 
         in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
-        , N) 
+        , Val(N)) 
     return toreturn
     # return res
 end
@@ -61,13 +61,13 @@ get_1d_ids(d, sz, offset, scale) = pick_n(d, scale) .* ((1:sz[d]) .- pick_n(d, o
 # a special in-place assignment, which gets its own differentiation rule for the reverse mode 
 # to avoid problems with memory-assignment and AD.
 function in_place_assing!(res, d, fct, idc, sz1d, args_d)
-    res[d][:] .= fct.(idc, sz1d, args_d...)
+    res[d][:] .= fct(idc, sz1d, args_d...)
     return res[d]
 end
 
 function out_of_place_assing(res, d, fct, idc, sz1d, args_d)
     # println("oop assign!")
-    return reorient(fct.(idc, sz1d, args_d...), Val(d))
+    return reorient(fct(idc, sz1d, args_d...), Val(d))
 end
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_place_assing!), res, d, fct, idc, sz1d, args_d)
@@ -133,7 +133,7 @@ For automatic differentiation support (e.g. for opinizing) you should use the `c
 
 #Example:
 ```julia
-julia> fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
+julia> fct = (r, sz, sigma)-> exp.(.-r.^2/(2*sigma^2))
 julia> gauss_sep = SeparableFunctions.calculate_separables_nokw(Array{Float32}, fct, (6,5), (0.5,1.0), 1.0, 1.0)
 2-element Vector{Array{Float32}}:
  [4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;]
@@ -188,7 +188,7 @@ Yet, a problem is that reduce operations with specified dimensions cause an erro
 + `operation`:    the separable operation connecting the separable dimensions
 
 ```jldoctest
-julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
+julia> fct = (r, sz, pos, sigma)-> exp.(.-(r.-pos)^2/(2*sigma^2))
 julia> my_gaussian = calculate_broadcasted(fct, (6,5), (0.1,0.2), (0.5,1.0))
 Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{2}}(*, 
 (Float32[4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;], 
@@ -242,13 +242,57 @@ function calculate_separables_nokw_hook(::Type{AT}, fct, sz::NTuple{N, Int}, arg
     return calculate_separables_nokw(AT, fct, sz, args...; kwargs...)
 end
 
+# just a dummy to divert the function definition below.
+function calculate_broadcasted_nokw_xxx()
+end
+
+# this code only works for the multiplicative version and actually only saves very few allocations.
+# it's not worth the specialization:
+function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_broadcasted_nokw_xxx), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
+    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
+    operation = *, defaults = nothing, kwargs...) where {AT, N}
+    # println("in rrule broadcast")
+    # y = calculate_broadcasted_nokw(AT, fct, sz, args..., kwargs...)
+    y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; all_axes=all_axes, kwargs...)
+    # println("y done")
+    # y = Broadcast.instantiate(Broadcast.broadcasted(operation, y...))
+    # @show size(y_sep[1])
+    # @show size(y_sep[2])
+    y = operation.(y_sep...)
+    # @show size(y)
+
+    function calculate_broadcasted_nokw_pullback(dy)
+        # println("in debug_dummy") # sz is (10, 20)
+        # @show size(dy)
+        projected = ntuple((d) -> begin
+            dims=((1:d-1)...,(d+1:N)...)
+            reduce(+, operation.(y_sep[[dims...]]...) .* dy, dims=dims)
+            end, Val(N)) # 7 Mb
+        # @show typeof(projected[1])
+        # @show size(projected[1])
+        # @show typeof(projected[2])
+        myres = calculate_sep_nokw_pullback(projected) # 8 kB
+        return myres
+    end
+    return y, calculate_broadcasted_nokw_pullback # in_place_assing_pullback # in_place_assing_pullback
+end
+
 # function calculate_separables_nokw_hook2()
 # end
 
 # to make the code run with Tuples and Vectors alike
-function optional_convert(ref_arg::T, val) where {T}
-    return T <: AbstractArray ? [val...] : val
+function optional_convert(ref_arg::AbstractArray, val)
+    return [val...]
 end
+
+function optional_convert(ref_arg::NTuple, val::NTuple)
+    return val
+end
+
+function optional_convert(ref_arg::Number, val::NTuple)
+    return sum(val)
+end
+
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw_hook), ::Type{AT}, fct, sz::NTuple{N, Int}, args...; kwargs...) where {AT, N}
     # println("in rrule calculate_separables_nokw_hook")
@@ -259,12 +303,12 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
 
     # fct signature is like this: (x, sz, sigma)-> exp(-x^2/(2*sigma^2)   . args has offset, scale, and further args
     # ids = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), Ref(args[2]))
-    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), N) # offset==args[1] and scale==args[2]
+    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), Val(N)) # offset==args[1] and scale==args[2]
     ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), one(eltype(AT)))
     # the above are NOT oriented!
 
     # wrap each function accordingly, yieldin a tuple of fuctions fcts to be applied to arrays
-    fcts = ntuple((d) -> ((ids, sz, args...) -> fct.(ids, sz, args...)), N)
+    # fcts = ntuple((d) -> ((ids, sz, args...) -> fct(ids, sz, args...)), Val(N))
     # calcuate a pullback for each of the dimensions via broadcast. singlton arguments are automatically broadcasted:
     # Note that ids as also a tuple of dimensions of ranges.
     # Note that this does only create th pullbacks but does not call them yet!  
@@ -276,26 +320,29 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     # @show typeof(fct)
     # @show typeof(config)
     # calculate_fct_value_pullbacks = ntuple((d) -> rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0), N)
-    val_pullback = (x, sz, args) -> begin tmp = rrule_via_ad(config, fct, x, sz, args...); (tmp[1], tmp[2](one(eltype(AT)))) end
-    val_pullbacks = ntuple((d)-> val_pullback.(ids[d], sz[d], pick_n.(d, args[3:end])), N)
-    # @show val_pullbacks
+    # val_pullback = (x, sz, args) -> begin tmp = rrule_via_ad(config, fct, x, sz, args...); (tmp[1], tmp[2]) end
+    # val_pullback = (x, sz, args) -> rrule_via_ad(config, fct, x, sz, args...); 
+    # line below: 29 allocs (41 kB, 23µs) could assing into a buffer
+    # val_pullbacks = ntuple((d)-> val_pullback(ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
+    # calcualte value and pulbacks for each dimension
+    val_pullbacks = ntuple((d)-> rrule_via_ad(config, fct, ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
+    
+    # @show size(val_pullbacks[2][1])
     # have to be oriented by hand:
-    y = ntuple((d) -> reorient(map(p -> p[1], val_pullbacks[d]), Val(d),N), N)
-    df_dids = ntuple((d) -> map(p -> p[2][2], val_pullbacks[d]), N)
-    df_dargs = ntuple((a) -> ntuple((d) -> map(p -> p[2][3+a], val_pullbacks[d]), N), length(args)-2)
-    # @show df_dargs
-    # dx_dids = ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), N)
-    # dx_dids = ntuple((d)-> dx_raw.(ids[d]), N)
+    y = ntuple((d) -> reorient(val_pullbacks[d][1], Val(d), Val(N)), Val(N))
+    # @show val_pullbacks[1][2][4]
+    # dx_dids = ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), Val(N))
+    # dx_dids = ntuple((d)-> dx_raw.(ids[d]), Val(N))
 
-    # dargs_dids = ntuple((a) -> ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), N), length(args[3:end])
+    # dargs_dids = ntuple((a) -> ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), Val(N)), length(args[3:end])
 
 
     # dargs_raw = ntuple((d)-> 
-    #                 rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0)[2](one(eltype(AT))), N)
-    # @show y
+    #                 rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0)[2](one(eltype(AT))), Val(N))
+    #@show size(y[1])
+    #@show size(y[2])
     # @show dx_dids
     # println("expicit end")
-
 
     # sep_diff = calculate_separables_nokw(AT, calculate_fct_pullbacks)
 
@@ -318,30 +365,49 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         # both of the derivatives below are based on the ids- (also called x-) derivative. The first two refers to the second return argument being the pullback 
         # x = scale * (ids_raw - offset), so the derivative dx/doffst = - scale, dx/dscale = ids_raw - offset
         # dy(f(x(offset)))/doffset = dy(x)/df * dx/doffset = df(x)/dx * -scale
-        # dx_dids = ntuple((d)->calculate_fct_value_pullbacks[d][2](one(eltype(AT)))[2], N)
+        # dx_dids = ntuple((d)->calculate_fct_value_pullbacks[d][2](one(eltype(AT)))[2], Val(N))
         # dx_dids = dargs_raw[1]
-        doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * (dy[d][:]' * df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
-        doffset = length(args[1]) == 1 ? sum(doffset) : doffset
-        # @show doffset  
-        dscale = optional_convert(args[2], ntuple((d) -> ((@view dy[d][:])' * (ids_offset_only[d] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
-        dscale = (length(args[2]) == 1) ? sum(dscale) : dscale
+        # @time doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * ((@view dy[d][:])' * df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # @show dy[1]
+        # @show df_dids[1]
+
+        pbs = ntuple((d) -> val_pullbacks[d][2](@view dy[d][:]), Val(N))
+        df_dids = ntuple((d) -> pbs[d][2], Val(N)) # df / dx
+        # @show size.(df_dids)
+        # @show pbs[1]
+        df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
+        # @show df_dargs
+    
+        # doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* dot(dy[d], df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* sum(df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # @time doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * sum(dy[d][:] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # doffset = length(args[1]) == 1 ? sum(doffset) : doffset
+        # @time dot(dy[1], (ids_offset_only[1] .* df_dids[1]))
+        dscale = optional_convert(args[2], ntuple((d) -> dot(ids_offset_only[d], df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # @time dscale = optional_convert(args[2], ntuple((d) -> (sum((@view dy[d][:])' .* ids_offset_only[d] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # dscale = (length(args[2]) == 1) ? sum(dscale) : dscale
         # @show myres[6]
+        # @show doffset
         # @show dscale
         # @show myres[6] # 9.438228607177734 # scale
         # @show dscale
         # dy(f(x, arg)/darg = dy(x)/df * df / darg 
-        # dx_dargs = ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+1], N) 
+        # dx_dargs = ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+1], Val(N)) 
         # @show dx_dargs
         # dargs = ntuple((argno) -> ntuple((d) -> (ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N))[d],
-        #             N), # ids @ offset the -1 is since the argument of fct is idx-offset
+        #             Val(N)), # ids @ offset the -1 is since the argument of fct is idx-offset
         #     length(args)-2) 
-        # dargs = ntuple((argno) -> ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N), length(args)-2) 
+        # dargs = ntuple((argno) -> ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], Val(N)), length(args)-2) 
 
-        # dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N)), length(args)-2) 
+        # dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], Val(N))), length(args)-2) 
 
         # dargs = ntuple((argno) -> NoTangent(), length(args)-2) 
 
-        dargs = ntuple((argno) -> optional_convert(args[1], ntuple((d) -> (@view dy[d][:])' * df_dargs[argno][d], N)), length(args)-2) 
+        dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> df_dargs[argno][d], Val(N))), length(args)-2)
+        # @show args[3]
+        # @show size(dy[1])
+        # @show size(df_dargs[1][2])
+        # dargs = ntuple((argno) -> optional_convert(args[1], ntuple((d) -> dot(dy[d], df_dargs[argno][d]), Val(N))), length(args)-2)
         # @show myres[7]
         # @show dargs
 

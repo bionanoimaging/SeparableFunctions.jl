@@ -266,18 +266,29 @@ a = rand(sz...);
 #### some gradient tests
 using SeparableFunctions
 using Zygote 
+using IndexFunArrays
 
-sz = (10,10)
+sz = (1000, 1000)
 # sz = (64,64)
 dat = rand(Float32, sz...)
+myxx = xx((sz[1],1)) .+0
+myyy = yy((1, sz[2])) .+0
+
+my_gaussian(off, sigma) = exp.(.-abs2.((myxx .- off[1])./sigma[1]) .- abs2.((myyy .- off[2])./sigma[2]))
+loss = (off, sigma) -> sum(abs2.(my_gaussian(off, sigma) .- dat))
+
 loss = (off, sigma) -> sum(abs2.(gaussian_nokw_sep(sz, off, 1.0f0, sigma) .- dat))
 # mystart = (1.1f0,2.2f0)
 mystart = [1.1f0,2.2f0]
 mysigma = [2.0f0, 3.0f0]
 loss(mystart, mysigma)
 
-
 g = gradient(loss, mystart, mysigma); 
 
-gradient(gaussian_raw, 1.0, 2.0, 3.0)
+# gradient(gaussian_raw, 1.0, 2.0, 3.0)
 
+@time g = gradient(loss, mystart, mysigma); 
+@btime g = gradient($loss, $mystart, $mysigma); 
+# 0.023 s full: 69 Mb (129 alloc, 1000x1000), benchmark: 18.853 ms (129 allocations: 68.79 MiB)
+# old: 5.493 ms (309 allocations: 26.78 MiB)
+# new: 5.412 ms (232 allocations: 26.78 MiB)

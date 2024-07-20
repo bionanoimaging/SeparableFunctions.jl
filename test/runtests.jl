@@ -43,9 +43,9 @@ end
 
 @testset "calculate_separables" begin
     sz = (13,15)
-    fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
+    fct = (r, sz, sigma)-> exp.(-r.^2/(2*sigma^2))
     offset = (2.2, -2.2)  ; scale = (1.1, 1.2); 
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset=offset.+(0.1,0.2), scale=scale)
+    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset = offset .+ (0.1,0.2), scale=scale)
     @test size(.*(gauss_sep...)) == sz
     # test with preallocated array
     all_axes = zeros(Float32, prod(sz))
@@ -163,6 +163,33 @@ end
     res4 = gaussian_col(sz, sigma=sigma) 
     res5 = radial_speedup_ifa(gaussian, sz; sigma=sigma) 
     @test maximum(abs.(res4 .- res5)) < 1e-6
+end
+
+@testset "gradient tests" begin
+    using FiniteDifferences
+    using Zygote
+    rng = collect(1:0.1:2)
+    sz = length(rng)
+
+    loss = (x, sigma) -> sum(gaussian_raw(x, sz, sigma))
+    sigma0 = 2.0
+    loss(rng, sigma0)
+    g = gradient(loss, rng, sigma0)
+    gn = grad(central_fdm(5, 1), loss, rng, sigma0) # 5th order method, 1st derivative
+    @test g[1] ≈ gn[1]
+    @test g[2] ≈ gn[2]
+
+    sz = (11, 22)
+    loss2 = (off, sca, sigma) -> sum(gaussian_nokw_sep(sz, off, sca, sigma))
+    sigma0 = 2.0
+    sca0 = (0.9, 1.2)
+    off0 = (1.1, 2.2)
+    loss2(off0, sca0, sigma0)
+    g = gradient(loss2, off0, sca0, sigma0)
+    gn = grad(central_fdm(5, 1), loss2, off0, sca0, sigma0) # 5th order method, 1st derivative
+    @test all(isapprox.(g[1], gn[1], atol=2e-3))
+    @test all(isapprox.(g[2], gn[2], atol=2e-3))
+
 end
 
 return
