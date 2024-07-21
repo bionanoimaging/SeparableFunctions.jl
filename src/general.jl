@@ -48,8 +48,9 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # allocate a contigous memory to be as cash-efficient as possible and dice it up below
     res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), Val(d), Val(N)), Val(N)) # Vector{AT}()
 
+    # below the cast of the indices is needed to make CuArrays work
     toreturn = ntuple((d) -> 
-        in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
+        in_place_assing!(res, d, fct, real_arr_type(AT, Val(1))(get_1d_ids(d, sz, offset, scale)), sz[d], arg_n(d, args, RT))
         , Val(N)) 
     return toreturn
     # return res

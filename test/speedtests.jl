@@ -20,28 +20,27 @@ function speedt_test()
 
     res2 = similar(res);
     ress = gaussian_sep(sz, sigma=sigma, offset=offset);
-    @btime $ress = gaussian_sep($sz, sigma=$sigma, offset=$offset); # 12.3 µs
-    resns = gaussian_nokw_sep(sz, offset, 1f0, 1f0, sigma); 
-    @btime $resns = gaussian_nokw_sep($sz, $offset, 1f0, 1f0, $sigma); # 12 µs
+    @btime $ress = gaussian_sep($sz, sigma=$sigma, offset=$offset); # 8 µs
+    resns = gaussian_nokw_sep(sz, offset, 1f0, sigma); 
+    @btime $resns = gaussian_nokw_sep($sz, $offset, 1f0, $sigma); # 8 µs
     res2 .= ress; 
     res2 ≈ res
-    @btime $res2 .= $ress; # 8.35 ms
-    @btime $res2 = similar($res); # 0.04 ms
+    @btime $res2 .= $ress; # 8.9 ms
+    @btime $res2 = similar($res); # 8 µs
     @btime $res2 .= gaussian_sep($sz, sigma=$sigma, offset=$offset); # 8.4 ms
 
-    # res3 = gaussian_col(sz, sigma=sigma, offset=offset);
+    res3 = gaussian_col(sz, sigma=sigma, offset=offset);
     t_col = @btime $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset); # 14 ms
 
     @btime $res2 .= SeparableFunctions.gaussian_lz($sz, sigma=$sigma, offset=$offset); # 8.47 ms
 
     resc = CuArray(res);
     res3c = gaussian_col(typeof(resc), sz, sigma=sigma, offset=offset); # 
-    @btime CUDA.@sync $res3 = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset); # 0.983 ms
+    @btime CUDA.@sync $res3c = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset); # 1.06 ms
      
     ids = CuArray(CartesianIndices(sz))
     resc = get_exp.(ids, Ref(sigma), Ref(offset)); 
-    @btime CUDA.@sync $resc = get_exp.($ids, Ref($sigma)); # 2.83 ms
-
+    @btime CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref(offset)); # 9.5 ms
 
     t_in_place = @belapsed get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 243 ms with offset (7 allocations, 64 Mb)!
     t_gaussian_col = @belapsed $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset)
@@ -52,7 +51,7 @@ function speedt_test()
     t_gaussian_sep = @belapsed res_gs = gaussian_sep($sz, sigma=$sigma, offset=$offset)
 
 
-    tc_get_exp = @belapsed CUDA.@sync $resc = get_exp.($ids, Ref($sigma))
+    tc_get_exp = @belapsed CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref($offset))
     tc_gaussian_col = @belapsed CUDA.@sync $res3 = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset)
 
     # NOT working: resc .= SeparableFunctions.gaussian_lz(typeof(resc), sz, sigma=sigma, offset=offset)
@@ -88,6 +87,7 @@ function speedt_test()
     g(x) = cis(sqrt(max(0f0, 0.25f0 - x)) * 12.566371f0)
 
     myrr2 = collect(rr2_sep(sz; scale=scale))
+    res = g.(rr2_sep(sz; scale=scale))
     @time res .= g.(rr2_sep(sz; scale=scale)); # 11.7 kB
     t_no_rad = @belapsed res .= g.($myrr2);  # 7 ms
 
