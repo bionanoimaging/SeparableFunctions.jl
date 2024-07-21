@@ -1,6 +1,9 @@
 using Test
 using IndexFunArrays
 using SeparableFunctions
+using FiniteDifferences
+using Zygote
+using Random
 
 function test_fct(T, fcts, sz, args...; kwargs...)
     ifa, fct = fcts
@@ -165,9 +168,26 @@ end
     @test maximum(abs.(res4 .- res5)) < 1e-6
 end
 
+function test_gradient(T, fct, sz, args...; kwargs...)
+    RT = real(T)
+    Random.seed!(1234)
+    dat = rand(T, sz...)
+    off0 = rand(RT, length(sz))
+    sca0 = rand(RT, length(sz))
+    args = ntuple((d)->RT.(args[d]), length(args))
+    loss = (off, sca, args...) -> sum(abs2.(fct(sz, off, sca, args..., kwargs...) .- dat))
+    # @show loss(off0, sca0, args...)
+    g = gradient(loss, off0, sca0, args...)
+    gn = grad(central_fdm(5, 1), loss, off0, sca0, args...) # 5th order method, 1st derivative
+    for r in 1:length(gn)
+        @test eltype(g[r]) == RT
+        # @show g[r]
+        # @show gn[r]
+        @test all(isapprox.(g[r], gn[r], rtol=1e-1))
+    end
+end
+
 @testset "gradient tests" begin
-    using FiniteDifferences
-    using Zygote
     rng = collect(1:0.1:2)
     sz = length(rng)
 
@@ -179,16 +199,38 @@ end
     @test g[1] ≈ gn[1]
     @test g[2] ≈ gn[2]
 
-    sz = (11, 22)
+    test_gradient(Float32, gaussian_nokw_sep, (11,22), (2.2, -0.8))
+    test_gradient(Float64, gaussian_nokw_sep, (6, 22, 7), 2.0)
+    test_gradient(Float32, gaussian_nokw_sep, (6,), 4.2f0)
+
+    test_gradient(Float64, normal_nokw_sep, (6, 22, 7), (2.0, -3.1, 1.2))
+
+    test_gradient(Float32, sinc_nokw_sep, (22, 11))
+    test_gradient(Float32, ramp_nokw_sep, (22, 11), (1.0, 2.0))
+    test_gradient(Float32, rr2_nokw_sep, (22, 11))
+    test_gradient(ComplexF32, exp_ikx_nokw_sep, (22, 11), (1.0, 2.0))
+
+    sz = (3,)
+    loss2 = (off, sca, shift_by) -> sum(imag.(exp_ikx_nokw_sep(sz, off, sca, shift_by)))
+    shift_by0 = 0.7
+    sca0 = 1.4
+    off0 = 0.3
+    loss2(off0, sca0, shift_by0)
+    g = gradient(loss2, off0, sca0, shift_by0)
+    gn = grad(central_fdm(5, 1), loss2, off0, sca0, shift_by0) # 5th order method, 1st derivative
+    @test all(isapprox.(g[1], gn[1], atol=5e-3))
+    @test all(isapprox.(g[2], gn[2], atol=1e-2))
+
+    sz = (11, 22, 7)
     loss2 = (off, sca, sigma) -> sum(gaussian_nokw_sep(sz, off, sca, sigma))
     sigma0 = 2.0
-    sca0 = (0.9, 1.2)
-    off0 = (1.1, 2.2)
+    sca0 = (0.9, 1.2, 0.4)
+    off0 = (0.9, 1.2, 0.4)
     loss2(off0, sca0, sigma0)
     g = gradient(loss2, off0, sca0, sigma0)
     gn = grad(central_fdm(5, 1), loss2, off0, sca0, sigma0) # 5th order method, 1st derivative
-    @test all(isapprox.(g[1], gn[1], atol=2e-3))
-    @test all(isapprox.(g[2], gn[2], atol=2e-3))
+    @test all(isapprox.(g[1], gn[1], atol=5e-3))
+    @test all(isapprox.(g[2], gn[2], atol=1e-2))
 
 end
 

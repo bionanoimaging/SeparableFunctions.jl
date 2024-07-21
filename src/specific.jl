@@ -34,17 +34,17 @@ function generate_functions_expr()
             :((f, x, sz, sigma) -> .-x./sigma^2 .* f),
             :((f, x, sz, sigma) -> x.^2 ./sigma^3 .* f)
             ), 
-        (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp.(.- x.^2 ./(2*sigma^2)) ./ (sqrt(eltype(x)(2pi))*sigma)), Float32, *,
+        (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp.(.- x.^2 ./(2*sigma^2)) ./ (sqrt(eltype(x)(2pi))*abs(sigma))), Float32, *,
             :((f, x, sz, sigma) -> .-x./sigma^2 .* f),
-            :((f, x, sz, sigma) -> (x.^2 ./sigma^3 .+ 1/sigma) .* f)
+            :((f, x, sz, sigma) -> (x.^2 ./sigma^3 .- inv(sigma)) .* f)
             ),
         (:(sinc), NamedTuple(), :((x,sz) -> sinc.(x)), Float32, *,
             :((f, x, sz) -> ifelse.(x .== zero(eltype(x)), zeros(eltype(x), size(x)), (cospi.(x) .- f)./x))
             ),
         # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
         (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis.(x.*(-eltype(x)(2pi)*shift_by/sz))), ComplexF32, *,
-            :((f, x, sz, shift_by) -> (-eltype(x)(2pi)*shift_by/sz) .* f),
-            :((f, x, sz, shift_by) -> (-eltype(x)(2pi)/sz) .*x .* f)
+            :((f, x, sz, shift_by) -> (-1im*eltype(x)(2pi)*shift_by/sz) .* f),
+            :((f, x, sz, shift_by) -> (-1im*eltype(x)(2pi)/sz) .*x .* f)
             ),
         (:(ramp), (slope=0,), :((x,sz, slope) -> slope.*x), Float32, +,
             :((f, x, sz, slope) ->  slope),
@@ -101,7 +101,7 @@ for F in generate_functions_expr()
                 # println("pb")
                 # @show dy
                 # @show $(F[6])(y, x, sz, args...; kwargs...)
-                mydx =  dy .* $(F[6])(y, x, sz, args...; kwargs...)
+                mydx =  conj.(dy) .* $(F[6])(y, x, sz, args...; kwargs...)
                 # targ = ntuple(d -> begin
                 #     mydarg = F[6+d]
                 #     dy .* $(mydarg)(y, x, sz, args...; kwargs...)
