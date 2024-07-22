@@ -1,7 +1,7 @@
 name = "SeparableFunctions"
 uuid = "c8c7ead4-852c-491e-a42d-3d43bc74259e"
 authors = ["RainerHeintzmann <heintzmann@gmail.com>"]
-version = "0.2"
+version = "0.2.0"
 
 [deps]
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
@@ -18,10 +18,11 @@ NDTools = "0.7"
 julia = "1"
 
 [extras]
+FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
-FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [targets]
-test = ["Test", "IndexFunArrays", "Zygote", "FiniteDifferences"]
+test = ["Test", "IndexFunArrays", "Zygote", "FiniteDifferences", "Random"]
