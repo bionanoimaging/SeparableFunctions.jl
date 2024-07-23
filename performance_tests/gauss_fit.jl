@@ -11,45 +11,47 @@ sigma = (2.2, 3.3)
 
 # Create some functions by hand
 # the first arguments are always r: (evaluation position) and sz: (size)
-fct = (xyz, sz, sigma)-> exp.(.-xyz.^2/sqrt(2))
+fct = (xyz, sz, sigma)-> exp(-xyz^2/sqrt(2))
 
 @time my_gaussian = separable_view(fct, sz, sigma); 
-@btime my_gaussian = separable_view($fct, $sz, $sigma); # Lazy Arrays: 10 µs
-@btime q = collect($my_gaussian); # 2.13 µs
+# @btime my_gaussian = separable_view($fct, $sz, $sigma); # Lazy Arrays: 4 µs
+# @btime q = collect($my_gaussian); # 3.7 µs
 w = separable_create(fct, sz, sigma)
-@btime w = separable_create($fct, $sz, $sigma); # 13.9 µs
-@btime q = collect($w); # 593 ns
+# @btime w = separable_create($fct, $sz, $sigma); # 6.7 µs
+# @btime q = collect($w); # 700 ns
 
 # Test some predefined functions
 @time my_gaussian = gaussian_col(sz; sigma = sigma); 
-@btime my_gaussian = gaussian_col($sz; sigma = $sigma); # 10 µs
+# @btime my_gaussian = gaussian_col($sz; sigma = $sigma); # 6 µs
 
 sz = (64,64)
 mid = sz.÷2 .+1
 myxx = Float32.(xx((sz[1],1)))
 myyy = Float32.(yy((1, sz[2])))
 
-# my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1])) .- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
-my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1]))).*exp.(.- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
+my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1])) .- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
+# my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1]))).*exp.(.- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
 
 vec_true = ComponentVector(;bg=0.2f0, intensity=1.0f0, off = (2.2f0, 3.3f0), sigma = (2.4f0, 1.5f0))
-Random.seed!(42)
-@btime my_full_gaussian($vec_true)
+# @btime my_full_gaussian($vec_true); # 42.800 μs (18 allocations: 16.70 KiB)
 
+Random.seed!(42)
 dat = 0.2f0 .* rand(Float32, sz...) .+ my_full_gaussian(vec_true)
 dat_copy = copy(dat)
 
 loss = (vec) -> sum(abs2.(my_full_gaussian(vec) .- dat))
 
-my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off.+mid, 1.0f0, vec.sigma)
+bc_mem = gaussian_nokw_sep(sz, vec_true.off.+mid, 1.0f0, vec_true.sigma)
+my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off.+mid, 1.0f0, vec.sigma; all_axes=bc_mem)
 loss_sep = (vec) -> sum(abs2.(my_sep_gaussian(vec) .- dat))
 
 # off_start = (2.0f0, 3.0f0)
 # sigma_start = (3.0f0, 2.0f0)
 
 off_start = [2.0f0, 3.0f0]
+# off_start = [-32f0, -32f0]
 sigma_start = [3.0f0, 2.0f0]
-startvals = ComponentVector(;bg = 0.5f0, intensity=1.2f0, off=off_start, sigma=sigma_start)
+startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, off=off_start, sigma=sigma_start)
 
 @vt dat my_full_gaussian(startvals) my_sep_gaussian(startvals)
 
@@ -64,12 +66,19 @@ import ForwardDiff, Zygote, Tapir, ReverseDiff  # AD backends you want to use
 # @btime g = gradient($loss_sep, $off_start, $sigma_start); # 50.800 μs (374 allocations: 132.50 KiB)
 
 # check Zygote directly:
-g = gradient(loss, startvals) #     ((off = Float32[-0.3461007, -1.4118637], sigma = Float32[-0.1541889, 0.4756397]),)
-g = gradient(loss_sep, startvals) # ((off = Float32[-0.34610048, -1.4118638], sigma = Float32[-0.15418859, 0.47563988]),)
+using Zygote
+g = Zygote.gradient(loss, startvals) #
+@btime g = Zygote.gradient($loss, $startvals) # 85 µs, 214 kB
+g = Zygote.gradient(loss_sep, startvals) # 
+@btime g = Zygote.gradient($loss_sep, $startvals) # 60 µs, 196 kB
 
-value_and_gradient(loss, AutoForwardDiff(), startvals) # (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
-value_and_gradient(loss, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
-value_and_gradient(loss, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g = value_and_gradient(loss, AutoForwardDiff(), startvals) # (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g = value_and_gradient(loss, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g = value_and_gradient(loss, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+
+v, g = value_and_gradient(loss_sep, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+
+# v, g = value_and_gradient(loss_sep, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
 # broken!
 # value_and_gradient(loss, AutoTapir(),  startvals) #      

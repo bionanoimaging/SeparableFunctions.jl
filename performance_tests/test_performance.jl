@@ -268,8 +268,8 @@ using SeparableFunctions
 using Zygote 
 using IndexFunArrays
 
-sz = (1000, 1000)
-# sz = (64,64)
+# sz = (1000, 1000)
+sz = (64,64)
 dat = rand(Float32, sz...)
 myxx = xx((sz[1],1)) .+0
 myyy = yy((1, sz[2])) .+0

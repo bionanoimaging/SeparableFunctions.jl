@@ -3,14 +3,11 @@
 
 picks the `n`th value of the vector v or return the scalar v.
 """
-function pick_n(n, v::Number)
-    v
-end
-
-function pick_n(n, v)
-    v[n]
-    # v[1+((n-1)%lastindex(v))]
-end
+pick_n(n, v::Number) = v
+pick_n(n, v::Tuple) = v[n]
+pick_n(n, v::Vector) = v[n]
+# for subarrays and alike:
+pick_n(n, v) = v[n]
 
 """ 
     arg_n(n, args...)
@@ -29,11 +26,15 @@ julia> collect(SeparableFunctions.arg_n(2, args))
  ```
 """
 function arg_n(n, args, T::Type)
-    return Tuple(T(pick_n(n, v)) for v in args)
+    return ntuple((p)->T(pick_n(n, args[p])), length(args))
 end
 function arg_n(n, args)
-    return Tuple(pick_n(n, v) for v in args)
+    return ntuple((p) -> pick_n(n, args[p]), length(args))
 end
+
+# function crunch_args(args)
+#     return Tuple(pick_n(n, v) for v in args)
+# end
 
 """ 
     kwarg_n(n, args...)

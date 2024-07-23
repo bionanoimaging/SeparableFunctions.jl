@@ -15,7 +15,7 @@ function test_fct(T, fcts, sz, args...; kwargs...)
         end
     end
 
-    res = fct(Array{T}, sz, args...; kwargs...)
+    res = fct.(Array{T}, sz, args...; kwargs...)
     if typeof(res) <: Tuple
         res = res[2].(res[1]...)
     end
@@ -27,7 +27,7 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     @test eltype(res)==T
 
     all_axes = zeros(T, prod(sz))
-    res2 = fct(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    res2 = fct.(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
     if typeof(res2) <: Tuple
         res2 = res2[2].(res2[1]...)
     end
@@ -46,7 +46,7 @@ end
 
 @testset "calculate_separables" begin
     sz = (13,15)
-    fct = (r, sz, sigma)-> exp.(-r.^2/(2*sigma^2))
+    fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
     offset = (2.2, -2.2)  ; scale = (1.1, 1.2); 
     @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset = offset .+ (0.1,0.2), scale=scale)
     @test size(.*(gauss_sep...)) == sz
@@ -175,7 +175,7 @@ function test_gradient(T, fct, sz, args...; kwargs...)
     off0 = rand(RT, length(sz))
     sca0 = rand(RT, length(sz))
     args = ntuple((d)->RT.(args[d]), length(args))
-    loss = (off, sca, args...) -> sum(abs2.(fct(sz, off, sca, args..., kwargs...) .- dat))
+    loss = (off, sca, args...) -> sum(abs2.(fct.(sz, off, sca, args..., kwargs...) .- dat))
     # @show loss(off0, sca0, args...)
     g = gradient(loss, off0, sca0, args...)
     gn = grad(central_fdm(5, 1), loss, off0, sca0, args...) # 5th order method, 1st derivative

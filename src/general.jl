@@ -39,20 +39,31 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
                                 all_axes = get_sep_mem(AT, sz),
                                 kwargs...) where {AT, N}
     RT = real(float(eltype(AT)))
-    offset = isnothing(offset) ? sz.÷2 .+1 : RT.(offset)
+    offset = isnothing(offset) ? (sz.÷2 .+1 ) : RT.(offset)
     scale = isnothing(scale) ? one(real(eltype(RT))) : RT.(scale)
-    # start = ntuple((d)->1, Val(N)) # 1 .- offset
+
+    offset = ntuple((d) -> pick_n(d, offset), Val(N))
+    scale = ntuple((d) -> pick_n(d, scale), Val(N))
 
     # below the cast of the indices is needed to make CuArrays work
-    for (res, d) in zip(all_axes, 1:N)
-        @show get_1d_ids(d, sz, offset, scale)
-        in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
+    # for (res, d) in zip(all_axes, 1:N)
+    #     in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
+    # end
+    # idcs = ntuple((d) -> scale[d] .* ((1:sz[d]) .- offset[d]), Val(N))
+    # args_1d = ntuple((d) -> arg_n(d, args), Val(N))
+    # in_place_assing!.(all_axes, 1, fct, idcs, sz, args_1d)
+    for (res, off, sca, sz1d, d) in zip(all_axes, offset, scale, sz, 1:N)
+        idc = sca .* ((1:sz1d) .- off)
+        args_d = arg_n(d, args, RT) # 
+        # in_place_assing!(res, 1, fct, idc, sz1d, args_d)
+        res[:] .= fct.(idc, sz1d, args_d...) # 5 allocs, 160 bytes
     end
     return all_axes
     # return res
 end
 
 get_1d_ids(d, sz, offset, scale) = pick_n(d, scale) .* ((1:sz[d]) .- pick_n(d, offset))
+# get_1d_ids(d, sz, offset::NTuple, scale::NTuple) = scale[d] .* ((1:sz[d]) .- offset[d])
 
 """
     get_sep_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
@@ -80,13 +91,12 @@ end
 # a special in-place assignment, which gets its own differentiation rule for the reverse mode 
 # to avoid problems with memory-assignment and AD.
 function in_place_assing!(res, d, fct, idc, sz1d, args_d)
-    @time res[:] .= fct(idc, sz1d, args_d...)
-    return res
+    res[:] .= fct.(idc, sz1d, args_d...) # 5 allocs, 256 bytes
 end
 
 function out_of_place_assing(res, d, fct, idc, sz1d, args_d)
     # println("oop assign!")
-    return reorient(fct(idc, sz1d, args_d...), Val(d))
+    return reorient(fct.(idc, sz1d, args_d...), Val(d))
 end
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_place_assing!), res, d, fct, idc, sz1d, args_d)
@@ -207,7 +217,7 @@ Yet, a problem is that reduce operations with specified dimensions cause an erro
 + `operation`:    the separable operation connecting the separable dimensions
 
 ```jldoctest
-julia> fct = (r, sz, pos, sigma)-> exp.(.-(r.-pos)^2/(2*sigma^2))
+julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
 julia> my_gaussian = calculate_broadcasted(fct, (6,5), (0.1,0.2), (0.5,1.0))
 Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{2}}(*, 
 (Float32[4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;], 
@@ -257,7 +267,7 @@ function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...
     operation = *, all_axes = get_bc_mem(AT, sz, operation),
     defaults = nothing, kwargs...) where {AT, N}
     # defaults should be evaluated here and filled into args...
-    @time calculate_separables_nokw_hook(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
+    calculate_separables_nokw_hook(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
     # res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
     # @show eltype(collect(res))
     return all_axes
@@ -273,17 +283,17 @@ end
 
 # this code only works for the multiplicative version and actually only saves very few allocations.
 # it's not worth the specialization:
-function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_broadcasted_nokw_xxx), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
+function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_broadcasted_nokw), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
     operation = *, all_axes = get_bc_mem(AT, sz, operation),
     defaults = nothing, kwargs...) where {AT, N}
     # println("in rrule broadcast")
     # y = calculate_broadcasted_nokw(AT, fct, sz, args..., kwargs...)
-    y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; all_axes=all_axes, kwargs...)
+    y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; all_axes=all_axes.args, kwargs...)
     # println("y done")
-    # y = Broadcast.instantiate(Broadcast.broadcasted(operation, y...))
+    # y = Broadcast.instantiate(Broadcast.broadcasted(operation, y_sep...))
+    y = operation.(y_sep...) # is faster than the broadcast above.
     # @show size(y_sep[1])
     # @show size(y_sep[2])
-    y = operation.(y_sep...)
     # @show size(y)
 
     function calculate_broadcasted_nokw_pullback(dy)
@@ -318,8 +328,34 @@ function optional_convert(ref_arg::Number, val::NTuple)
     return sum(val)
 end
 
+function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw_hook), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
+    all_axes = get_sep_mem(AT, sz), kwargs...) where {AT, N}
+    # ids = ntuple((d) -> reorient(get_1d_ids(d, sz, args[1], args[2]), d, Val(N)), Val(N)) # offset==args[1] and scale==args[2]
+    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), Val(N)) # offset==args[1] and scale==args[2]
+    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), one(eltype(AT)))
 
-function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw_hook), ::Type{AT}, fct, sz::NTuple{N, Int}, args...; kwargs...) where {AT, N}
+    y = calculate_separables_nokw(AT, fct, sz, args...; all_axes = all_axes, kwargs...)
+
+    args_1d = ntuple((d)-> pick_n.(d, args[3:end]), Val(N))
+
+    function calculate_separables_nokw_hook_pullback(dy)
+        #get_idx_gradient(fct, y, x, sz[d], dy[d], args...)
+        #get_arg_gradient(fct, y, x, sz[d], dy[d].*ids_offset_only[d], args...)
+        yv = ntuple((d) -> (@view y[d][:]), Val(N))
+        dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
+        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* 
+            get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+
+        dargs = ntuple((argno) -> optional_convert(args[2+argno],
+            ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)-2) # ids @ offset the -1 is since the argument of fct is idx-offset
+
+        dscale = optional_convert(args[2], ntuple((d) -> 
+            get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset        
+
+        return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dargs...)
+        end
+    return y, calculate_separables_nokw_hook_pullback
+
     # println("in rrule calculate_separables_nokw_hook")
     # y = calculate_separables_nokw(AT, fct, sz, args...; kwargs...)
     # @show typeof(y)
@@ -328,8 +364,6 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
 
     # fct signature is like this: (x, sz, sigma)-> exp(-x^2/(2*sigma^2)   . args has offset, scale, and further args
     # ids = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), Ref(args[2]))
-    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), Val(N)) # offset==args[1] and scale==args[2]
-    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), one(eltype(AT)))
     # the above are NOT oriented!
 
     # wrap each function accordingly, yieldin a tuple of fuctions fcts to be applied to arrays
@@ -350,11 +384,38 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     # line below: 29 allocs (41 kB, 23µs) could assing into a buffer
     # val_pullbacks = ntuple((d)-> val_pullback(ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
     # calcualte value and pulbacks for each dimension
-    val_pullbacks = ntuple((d)-> rrule_via_ad(config, fct, ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
+    # val_pullbacks = ntuple((d)-> (id) -> rrule_via_ad(config, fct, ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
+    # val_pullbacks = ntuple((d)-> (id) -> rrule_via_ad(config, fct, id, sz[d], pick_n.(d, args[3:end])...), Val(N))
+
+    function extract_2_4(t::Tuple{Any, Any, Any, Any})
+        return t[2], t[4]
+    end
+
+    function extract_2_4(t::Tuple{Any, Any, Any})
+        return t[2], t[2]
+    end
+
+    function apply_pb(t::Tuple)
+        return t[1], extract_2_4(t[2](one(eltype(AT))))...
+    end
     
+    function get_y_dydx!(y, pb, pa, p, id, sz1d, d)
+        y[p], pb[p], pa[p] = apply_pb(rrule(config, fct, id, sz1d, pick_n.(d, args[3:end])...))
+    end
+
+    # y = zeros(eltype(AT), sz[1])
+    df_dids = get_sep_mem(AT, sz)
+    df_dargs = get_sep_mem(AT, sz)
+    ntuple((d) -> get_y_dydx!.(Ref(all_axes[d]), Ref(df_dids[d]), Ref(df_dargs[d]), 1:sz[d], ids[d], sz[d], d), Val(N))
+    y = all_axes;
+    # df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
+
+    # @show val_pullbacks
     # @show size(val_pullbacks[2][1])
     # have to be oriented by hand:
-    y = ntuple((d) -> reorient(val_pullbacks[d][1], Val(d), Val(N)), Val(N))
+    # y = ntuple((d) -> reorient(val_pullbacks[d].(ids[d])[1], Val(d), Val(N)), Val(N))
+    # y = all_axes;
+
     # @show val_pullbacks[1][2][4]
     # dx_dids = ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), Val(N))
     # dx_dids = ntuple((d)-> dx_raw.(ids[d]), Val(N))
@@ -371,7 +432,7 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
 
     # sep_diff = calculate_separables_nokw(AT, calculate_fct_pullbacks)
 
-    function calculate_separables_nokw_hook_pullback(dy)
+    function calculate_separables_nokw_hook_pullback_xxx(dy)
         # println("in nokw pullback")
         # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), [0.2f0, 0.3f0], NoTangent(), NoTangent())
 
@@ -396,19 +457,23 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         # @show dy[1]
         # @show df_dids[1]
 
-        pbs = ntuple((d) -> val_pullbacks[d][2](@view dy[d][:]), Val(N))
-        df_dids = ntuple((d) -> pbs[d][2], Val(N)) # df / dx
+        # pbs = ntuple((d) -> val_pullbacks[d][2](@view dy[d][:]), Val(N))
+        # df_dids = ntuple((d) -> pbs[d][2], Val(N)) # df / dx
+
         # @show size.(df_dids)
         # @show pbs[1]
-        df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
         # @show df_dargs
     
         # doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* dot(dy[d], df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* sum(df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* sum(dy[d] .* df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # @show doffset
+
         # @time doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * sum(dy[d][:] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
         # doffset = length(args[1]) == 1 ? sum(doffset) : doffset
         # @time dot(dy[1], (ids_offset_only[1] .* df_dids[1]))
-        dscale = optional_convert(args[2], ntuple((d) -> dot(ids_offset_only[d], df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        dscale = optional_convert(args[2], ntuple((d) -> dot(ids_offset_only[d], dy[d] .* df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, NoTangent())
+
         # @time dscale = optional_convert(args[2], ntuple((d) -> (sum((@view dy[d][:])' .* ids_offset_only[d] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
         # dscale = (length(args[2]) == 1) ? sum(dscale) : dscale
         # @show myres[6]
@@ -428,7 +493,13 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
 
         # dargs = ntuple((argno) -> NoTangent(), length(args)-2) 
 
-        dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> df_dargs[argno][d], Val(N))), length(args)-2)
+        # df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
+
+        # ONLY WORKS FOR zero or one extra argument!
+        dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> sum(dy[d].*df_dargs[d]), Val(N))), length(args)-2)
+        # @show df_dargs[1]
+        # @show dy[1]
+        # @show dargs
         # @show args[3]
         # @show size(dy[1])
         # @show size(df_dargs[1][2])
@@ -445,6 +516,23 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     return y, calculate_separables_nokw_hook_pullback # in_place_assing_pullback # in_place_assing_pullback
 end
 
+function fg!(data::AbstractArray{T,N}, fct, off, sca, args...; all_axes) where {T,N}
+    sz = size(data)
+    y = calculate_separables_nokw(typeof(data), fct, sz, off, sca, args...; all_axes=all_axes)
+
+    dy = ntuple((d) -> 2*sum((y[d] .- data), dims=d), Val(N))
+    yv = ntuple((d) -> (@view y[d][:]), Val(N))
+    dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
+    doffset = optional_convert(off, ntuple((d) -> .- pick_n(d, args[2]) .* 
+        get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+
+    dargs = ntuple((argno) -> optional_convert(args[argno],
+        ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
+
+    dscale = optional_convert(sca, ntuple((d) -> 
+        get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+    return y, doffset, dscale, dargs...
+end
 
 function calculate_broadcasted_nokw(fct, sz::NTuple{N, Int}, args...; 
     operation = *, all_axes = get_bc_mem(AT, sz, operation),
@@ -503,7 +591,7 @@ function separable_view(::Type{AT}, fct, sz::NTuple{N, Int}, args...;
 end
 
 function separable_view(fct, sz::NTuple{N, Int}, args...; 
-        all_axes = get_sep_mem(AT, sz),
+        all_axes = get_sep_mem(DefaultArrType, sz),
         operation = *, kwargs...) where {N}
     separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; all_axes = all_axes, operation=operation, kwargs...)
 end
