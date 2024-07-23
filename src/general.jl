@@ -380,10 +380,10 @@ function fg!(data::AbstractArray{T,N}, fct, bg, intensity, off, sca, args...; op
     other_ys = ntuple((d)-> (ntuple((n)->y[n], d-1)..., ntuple((n)->y[d+n], N-d)...), Val(N))
     # moved 2*intensity to the condensed terms, but logically it should be in dy!
     # this is fairly expensive in memory:
-    @time dy = ntuple((d) -> sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d]), Val(N))
-    # dy = ntuple((d) -> mapreduce(.*, +, resid, other_ys[d]..., dims=other_dims[d]), Val(N))
-    # @show size(dy[1])
-    # @show size(dy[2])
+    dy = ntuple((d) -> sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d]), Val(N))
+    # less memory, but a little slower:
+    # dy = ntuple((d) -> broadcast_reduce(*, +, resid, other_ys[d]..., dims=other_dims[d], init=zero(T)), Val(N))
+    # @time dy = ntuple((d) -> mapreduce(*, +, resid, other_ys[d]...), dims=other_dims[d]), Val(N))
 
     yv = ntuple((d) -> (@view y[d][:]), Val(N))
     dyv = ntuple((d) -> (@view dy[d][:]), Val(N))

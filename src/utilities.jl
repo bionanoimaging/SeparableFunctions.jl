@@ -83,3 +83,9 @@ function kwargs_to_args(defaults, kwargs)
     end
     Tuple(res)
 end
+
+
+function broadcast_reduce(f, op, A...; dims, init)
+    bc = Broadcast.instantiate(Broadcast.broadcasted(f, A...))
+    return reduce(op, bc; dims, init)
+end
