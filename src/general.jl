@@ -1,8 +1,6 @@
 """
     calculate_separables_nokw([::Type{AT},] fct, sz::NTuple{N, Int}, offset = sz.÷2 .+1, scale = one(real(eltype(AT))),
-                                args...; 
-                        all_axes = (similar_arr_type(AT, dims=Val(1)))(undef, sum(sz)),  
-                           kwargs...) where {AT, N}
+                                args...;all_axes = get_sep_mem(AT, sz), kwargs...) where {AT, N}
 
 creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
@@ -38,32 +36,52 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
                                 offset = sz.÷2 .+1,
                                 scale = one(real(eltype(AT))),
                                 args...; 
-                                all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
+                                all_axes = get_sep_mem(AT, sz),
                                 kwargs...) where {AT, N}
     RT = real(float(eltype(AT)))
     offset = isnothing(offset) ? sz.÷2 .+1 : RT.(offset)
     scale = isnothing(scale) ? one(real(eltype(RT))) : RT.(scale)
     # start = ntuple((d)->1, Val(N)) # 1 .- offset
 
-    # allocate a contigous memory to be as cash-efficient as possible and dice it up below
-    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), Val(d), Val(N)), Val(N)) # Vector{AT}()
-
     # below the cast of the indices is needed to make CuArrays work
-    toreturn = ntuple((d) -> 
-        in_place_assing!(res, d, fct, real_arr_type(AT, Val(1))(get_1d_ids(d, sz, offset, scale)), sz[d], arg_n(d, args, RT))
-        , Val(N)) 
-    return toreturn
+    for (res, d) in zip(all_axes, 1:N)
+        @show get_1d_ids(d, sz, offset, scale)
+        in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
+    end
+    return all_axes
     # return res
 end
 
 get_1d_ids(d, sz, offset, scale) = pick_n(d, scale) .* ((1:sz[d]) .- pick_n(d, offset))
 
+"""
+    get_sep_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
+
+allocates a contingous memory for the separable functions. This is useful if you want to use the same memory for multiple calculations.
+It should be passed to the `calculate_separables_nokw` function via the all_axes argument.
+"""
+function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
+    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz))
+    res = ntuple((d) -> reorient((@view all_axes[1+sum(sz[1:d])-sz[d]:sum(sz[1:d])]), Val(d), Val(N)), Val(N)) # Vector{AT}()
+    return res
+end
+
+"""
+    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
+
+allocates a contingous memory for the separable functions and wraps it into an instantiate broadcast structure.
+This structure is also returned by functions like `gaussian_sep` and can  be reused by supplying it via the
+keyword argument `all_axes`.
+"""
+function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operation) where {AT, N}
+    return Broadcast.instantiate(Broadcast.broadcasted(operation, get_sep_mem(AT, sz)...))
+end
 
 # a special in-place assignment, which gets its own differentiation rule for the reverse mode 
 # to avoid problems with memory-assignment and AD.
 function in_place_assing!(res, d, fct, idc, sz1d, args_d)
-    res[d][:] .= fct(idc, sz1d, args_d...)
-    return res[d]
+    @time res[:] .= fct(idc, sz1d, args_d...)
+    return res
 end
 
 function out_of_place_assing(res, d, fct, idc, sz1d, args_d)
@@ -112,7 +130,7 @@ end
 
 """
     calculate_separables([::Type{AT},] fct, sz::NTuple{N, Int}, args...; 
-                                    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
+                                    all_axes = get_sep_mem(AT, sz),
                                     defaults=NamedTuple(), 
                                     offset = sz.÷2 .+1,
                                     scale = one(real(eltype(AT))),
@@ -151,7 +169,7 @@ julia> gauss_sep = SeparableFunctions.calculate_separables_nokw(Array{Float32}, 
 """
 function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int}, 
     args...; 
-    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
+    all_axes = get_sep_mem(AT, sz),
     defaults=NamedTuple(), 
     offset = sz.÷2 .+1,
     scale = one(real(eltype(AT))),
@@ -162,7 +180,7 @@ function calculate_separables(::Type{AT}, fct, sz::NTuple{N, Int},
 end
 
 function calculate_separables(fct, sz::NTuple{N, Int},  args...; 
-        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
+        all_axes = get_sep_mem(AT, sz),
         defaults=NamedTuple(), 
         offset = sz.÷2 .+1,
         scale = one(real(eltype(DefaultArrType))),
@@ -205,15 +223,20 @@ julia> collect(my_gaussian)
 ```
 """
 function calculate_broadcasted(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-        all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
-        operation = *, kwargs...) where {AT, N}
-    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+        operation = *, all_axes = get_bc_mem(AT, sz, operation),
+        kwargs...) where {AT, N}
+    # replace the sep memory inside the broadcast structure with new values:
+    calculate_separables(AT, fct, sz, args...; all_axes=all_axes.args, kwargs...)
+    return all_axes
+    # Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
 end
 
 function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; 
-        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
-        operation = *, kwargs...) where {N}
-    Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+        operation = *, all_axes = get_bc_mem(AT, sz, operation),
+        kwargs...) where {N}
+        calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
+        return all_axes
+        # Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
 end
 
 # function calculate_sep_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
@@ -231,12 +254,13 @@ end
 
 ### Versions where offst and scale are without keyword arguments
 function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
-    operation = *, defaults = nothing, kwargs...) where {AT, N}
+    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    defaults = nothing, kwargs...) where {AT, N}
     # defaults should be evaluated here and filled into args...
-    res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+    @time calculate_separables_nokw_hook(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
+    # res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
     # @show eltype(collect(res))
-    return res
+    return all_axes
 end
 
 function calculate_separables_nokw_hook(::Type{AT}, fct, sz::NTuple{N, Int}, args...; kwargs...) where {AT, N} 
@@ -250,8 +274,8 @@ end
 # this code only works for the multiplicative version and actually only saves very few allocations.
 # it's not worth the specialization:
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_broadcasted_nokw_xxx), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
-    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
-    operation = *, defaults = nothing, kwargs...) where {AT, N}
+    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    defaults = nothing, kwargs...) where {AT, N}
     # println("in rrule broadcast")
     # y = calculate_broadcasted_nokw(AT, fct, sz, args..., kwargs...)
     y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; all_axes=all_axes, kwargs...)
@@ -423,12 +447,13 @@ end
 
 
 function calculate_broadcasted_nokw(fct, sz::NTuple{N, Int}, args...; 
-    all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
-    operation = *, defaults = nothing, kwargs...) where {N}
+    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    defaults = nothing, kwargs...) where {N}
     # defaults should be evaluated here and filled into args...
-    res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+    calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
+    # res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
     # @show eltype(collect(res))
-    return res
+    return all_axes
 end
 
 # towards a Gaussian that can also be rotated:
@@ -471,14 +496,14 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
 ```
 """
 function separable_view(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-        all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
+        all_axes = get_sep_mem(AT, sz),
         operation = *, kwargs...) where {AT, N}
     res = calculate_separables(AT, fct, sz, args...; all_axes = all_axes, kwargs...)
     return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
 end
 
 function separable_view(fct, sz::NTuple{N, Int}, args...; 
-        all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
+        all_axes = get_sep_mem(AT, sz),
         operation = *, kwargs...) where {N}
     separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; all_axes = all_axes, operation=operation, kwargs...)
 end
