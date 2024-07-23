@@ -29,10 +29,10 @@ mid = sz.÷2 .+1
 myxx = Float32.(xx((sz[1],1)))
 myyy = Float32.(yy((1, sz[2])))
 
-my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1])) .- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
-# my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1]))).*exp.(.- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
+my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.(vec.sca[1].*(myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1])) .- abs2.(vec.sca[2].*(myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
+# my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.(vec.sca[1].*(myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1]))).*exp.(.- abs2.(vec.sca[2].*(myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
 
-vec_true = ComponentVector(;bg=0.2f0, intensity=1.0f0, off = (2.2f0, 3.3f0), sigma = (2.4f0, 1.5f0))
+vec_true = ComponentVector(;bg=0.2f0, intensity=1.0f0, sca= (1f0, 1f0), off = (2.2f0, 3.3f0), sigma = (2.4f0, 1.5f0))
 # @btime my_full_gaussian($vec_true); # 42.800 μs (18 allocations: 16.70 KiB)
 
 Random.seed!(42)
@@ -41,8 +41,8 @@ dat_copy = copy(dat)
 
 loss = (vec) -> sum(abs2.(my_full_gaussian(vec) .- dat))
 
-bc_mem = gaussian_nokw_sep(sz, vec_true.off.+mid, 1.0f0, vec_true.sigma)
-my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off.+mid, 1.0f0, vec.sigma; all_axes=bc_mem)
+bc_mem = gaussian_nokw_sep(sz, vec_true.off.+mid, vec_true.sca, vec_true.sigma)
+my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off .+mid, vec.sca, vec.sigma; all_axes=bc_mem)
 loss_sep = (vec) -> sum(abs2.(my_sep_gaussian(vec) .- dat))
 
 # off_start = (2.0f0, 3.0f0)
@@ -51,7 +51,8 @@ loss_sep = (vec) -> sum(abs2.(my_sep_gaussian(vec) .- dat))
 off_start = [2.0f0, 3.0f0]
 # off_start = [-32f0, -32f0]
 sigma_start = [3.0f0, 2.0f0]
-startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, off=off_start, sigma=sigma_start)
+sca_start = [1.2f0, 1.5f0]
+startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, sca=sca_start, off=off_start, sigma=sigma_start)
 
 @vt dat my_full_gaussian(startvals) my_sep_gaussian(startvals)
 
@@ -70,7 +71,7 @@ using Zygote
 g = Zygote.gradient(loss, startvals) #
 @btime g = Zygote.gradient($loss, $startvals) # 85 µs, 214 kB
 g = Zygote.gradient(loss_sep, startvals) # 
-@btime g = Zygote.gradient($loss_sep, $startvals) # 60 µs, 196 kB
+@btime g = Zygote.gradient($loss_sep, $startvals) # 59 µs, 409 allocs, 199 kB
 
 v, g = value_and_gradient(loss, AutoForwardDiff(), startvals) # (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 v, g = value_and_gradient(loss, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
@@ -79,6 +80,12 @@ v, g = value_and_gradient(loss, AutoReverseDiff(),  startvals) #(54.162834f0, (o
 v, g = value_and_gradient(loss_sep, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
 # v, g = value_and_gradient(loss_sep, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+
+mymem = get_bc_mem(typeof(dat), size(dat), *)
+@time fg!(dat, gaussian_raw, startvals.bg, startvals.intensity, startvals.off .+ sz.÷2 .+1, startvals.sca, startvals.sigma; all_axes=mymem)
+
+@btime fg!($dat, $gaussian_raw, $startvals.bg, $startvals.intensity, $startvals.off .+ $sz.÷2 .+1, startvals.sca, $startvals.sigma; all_axes=$mymem)
+# 35.3 µs, 165 allocs, 126 kB
 
 # broken!
 # value_and_gradient(loss, AutoTapir(),  startvals) #      

@@ -346,192 +346,65 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* 
             get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
 
+        dscale = optional_convert(args[2], ntuple((d) -> 
+            get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset        
+
         dargs = ntuple((argno) -> optional_convert(args[2+argno],
             ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)-2) # ids @ offset the -1 is since the argument of fct is idx-offset
 
-        dscale = optional_convert(args[2], ntuple((d) -> 
-            get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset        
 
         return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dargs...)
         end
     return y, calculate_separables_nokw_hook_pullback
-
-    # println("in rrule calculate_separables_nokw_hook")
-    # y = calculate_separables_nokw(AT, fct, sz, args...; kwargs...)
-    # @show typeof(y)
-    # @show collect(y)
-    # _, calculate_separables_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw, AT, fct, sz, args...; kwargs...)
-
-    # fct signature is like this: (x, sz, sigma)-> exp(-x^2/(2*sigma^2)   . args has offset, scale, and further args
-    # ids = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), Ref(args[2]))
-    # the above are NOT oriented!
-
-    # wrap each function accordingly, yieldin a tuple of fuctions fcts to be applied to arrays
-    # fcts = ntuple((d) -> ((ids, sz, args...) -> fct(ids, sz, args...)), Val(N))
-    # calcuate a pullback for each of the dimensions via broadcast. singlton arguments are automatically broadcasted:
-    # Note that ids as also a tuple of dimensions of ranges.
-    # Note that this does only create th pullbacks but does not call them yet!  
-    # calculate_fct_value_pullbacks = rrule_via_ad.(config, fcts, ids, sz, args[3:end]...)
-    # println("finished early pullback")
-
-    # println("explicit call")
-    # @show typeof(fcts)
-    # @show typeof(fct)
-    # @show typeof(config)
-    # calculate_fct_value_pullbacks = ntuple((d) -> rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0), N)
-    # val_pullback = (x, sz, args) -> begin tmp = rrule_via_ad(config, fct, x, sz, args...); (tmp[1], tmp[2]) end
-    # val_pullback = (x, sz, args) -> rrule_via_ad(config, fct, x, sz, args...); 
-    # line below: 29 allocs (41 kB, 23µs) could assing into a buffer
-    # val_pullbacks = ntuple((d)-> val_pullback(ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
-    # calcualte value and pulbacks for each dimension
-    # val_pullbacks = ntuple((d)-> (id) -> rrule_via_ad(config, fct, ids[d], sz[d], pick_n.(d, args[3:end])...), Val(N))
-    # val_pullbacks = ntuple((d)-> (id) -> rrule_via_ad(config, fct, id, sz[d], pick_n.(d, args[3:end])...), Val(N))
-
-    function extract_2_4(t::Tuple{Any, Any, Any, Any})
-        return t[2], t[4]
-    end
-
-    function extract_2_4(t::Tuple{Any, Any, Any})
-        return t[2], t[2]
-    end
-
-    function apply_pb(t::Tuple)
-        return t[1], extract_2_4(t[2](one(eltype(AT))))...
-    end
-    
-    function get_y_dydx!(y, pb, pa, p, id, sz1d, d)
-        y[p], pb[p], pa[p] = apply_pb(rrule(config, fct, id, sz1d, pick_n.(d, args[3:end])...))
-    end
-
-    # y = zeros(eltype(AT), sz[1])
-    df_dids = get_sep_mem(AT, sz)
-    df_dargs = get_sep_mem(AT, sz)
-    ntuple((d) -> get_y_dydx!.(Ref(all_axes[d]), Ref(df_dids[d]), Ref(df_dargs[d]), 1:sz[d], ids[d], sz[d], d), Val(N))
-    y = all_axes;
-    # df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
-
-    # @show val_pullbacks
-    # @show size(val_pullbacks[2][1])
-    # have to be oriented by hand:
-    # y = ntuple((d) -> reorient(val_pullbacks[d].(ids[d])[1], Val(d), Val(N)), Val(N))
-    # y = all_axes;
-
-    # @show val_pullbacks[1][2][4]
-    # dx_dids = ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), Val(N))
-    # dx_dids = ntuple((d)-> dx_raw.(ids[d]), Val(N))
-
-    # dargs_dids = ntuple((a) -> ntuple((d)-> ((x) -> rrule_via_ad(config, fct, x, 2.0, 3.0)[2](one(eltype(AT)))[2]).(ids[d]), Val(N)), length(args[3:end])
-
-
-    # dargs_raw = ntuple((d)-> 
-    #                 rrule_via_ad(config, fcts[d], ids[d], 2.0, 3.0)[2](one(eltype(AT))), Val(N))
-    #@show size(y[1])
-    #@show size(y[2])
-    # @show dx_dids
-    # println("expicit end")
-
-    # sep_diff = calculate_separables_nokw(AT, calculate_fct_pullbacks)
-
-    function calculate_separables_nokw_hook_pullback_xxx(dy)
-        # println("in nokw pullback")
-        # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), [0.2f0, 0.3f0], NoTangent(), NoTangent())
-
-        # println("in calculate_separables_nokw_hook_pullback") # sz is (10, 20)
-        # @show dy 
-        # @show typeof(dy)  # Tangent{Any, Tuple{Matrix{Float32}, Matrix{Float32}}}
-        # @show size(dy[1])  # (10, 1)
-        # @show size(dy[2])  # (1, 20) 
-        # myres = calculate_separables_nokw_pullback(dy)
-        # @show length(myres) # 7
-        # @show myres[1] # NoTangent() # mytype
-        # @show myres[2] # NoTangent() # AT
-        # @show myres[3] # NoTangent() # fct
-        # @show myres[4] # Tangent{Tuple{Int64, Int64}}(0.0f0, 0.0f0) # sz
-        # @show myres[5] # Tangent{Tuple{Float32, Float32}}(-2.893550157546997, -0.7438024878501892) # offset
-        # both of the derivatives below are based on the ids- (also called x-) derivative. The first two refers to the second return argument being the pullback 
-        # x = scale * (ids_raw - offset), so the derivative dx/doffst = - scale, dx/dscale = ids_raw - offset
-        # dy(f(x(offset)))/doffset = dy(x)/df * dx/doffset = df(x)/dx * -scale
-        # dx_dids = ntuple((d)->calculate_fct_value_pullbacks[d][2](one(eltype(AT)))[2], Val(N))
-        # dx_dids = dargs_raw[1]
-        # @time doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * ((@view dy[d][:])' * df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
-        # @show dy[1]
-        # @show df_dids[1]
-
-        # pbs = ntuple((d) -> val_pullbacks[d][2](@view dy[d][:]), Val(N))
-        # df_dids = ntuple((d) -> pbs[d][2], Val(N)) # df / dx
-
-        # @show size.(df_dids)
-        # @show pbs[1]
-        # @show df_dargs
-    
-        # doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* dot(dy[d], df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* sum(dy[d] .* df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-        # @show doffset
-
-        # @time doffset = optional_convert(args[1], ntuple((d) -> - (pick_n(d, args[2]) * sum(dy[d][:] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
-        # doffset = length(args[1]) == 1 ? sum(doffset) : doffset
-        # @time dot(dy[1], (ids_offset_only[1] .* df_dids[1]))
-        dscale = optional_convert(args[2], ntuple((d) -> dot(ids_offset_only[d], dy[d] .* df_dids[d]), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-        # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, NoTangent())
-
-        # @time dscale = optional_convert(args[2], ntuple((d) -> (sum((@view dy[d][:])' .* ids_offset_only[d] .* df_dids[d]))[1], N)) # ids @ offset the -1 is since the argument of fct is idx-offset
-        # dscale = (length(args[2]) == 1) ? sum(dscale) : dscale
-        # @show myres[6]
-        # @show doffset
-        # @show dscale
-        # @show myres[6] # 9.438228607177734 # scale
-        # @show dscale
-        # dy(f(x, arg)/darg = dy(x)/df * df / darg 
-        # dx_dargs = ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+1], Val(N)) 
-        # @show dx_dargs
-        # dargs = ntuple((argno) -> ntuple((d) -> (ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], N))[d],
-        #             Val(N)), # ids @ offset the -1 is since the argument of fct is idx-offset
-        #     length(args)-2) 
-        # dargs = ntuple((argno) -> ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], Val(N)), length(args)-2) 
-
-        # dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> calculate_fct_value_pullbacks[d][2](@view dy[d][:])[3+argno], Val(N))), length(args)-2) 
-
-        # dargs = ntuple((argno) -> NoTangent(), length(args)-2) 
-
-        # df_dargs = ntuple((a) -> ntuple((d) -> pbs[d][3+a], Val(N)), length(args)-2)
-
-        # ONLY WORKS FOR zero or one extra argument!
-        dargs = ntuple((argno) -> optional_convert(args[2+argno], ntuple((d) -> sum(dy[d].*df_dargs[d]), Val(N))), length(args)-2)
-        # @show df_dargs[1]
-        # @show dy[1]
-        # @show dargs
-        # @show args[3]
-        # @show size(dy[1])
-        # @show size(df_dargs[1][2])
-        # dargs = ntuple((argno) -> optional_convert(args[1], ntuple((d) -> dot(dy[d], df_dargs[argno][d]), Val(N))), length(args)-2)
-        # @show myres[7]
-        # @show dargs
-
-        # @show myres[7] # Tangent{Tuple{Float64, Float64}}((-4.5020714f0, -4.9361587f0) # sigma
-        # @show dargs
-        return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dargs...)
-        # return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), myres[5], myres[6], myres[7])
-    end
-
-    return y, calculate_separables_nokw_hook_pullback # in_place_assing_pullback # in_place_assing_pullback
 end
 
-function fg!(data::AbstractArray{T,N}, fct, off, sca, args...; all_axes) where {T,N}
+function fg!(data::AbstractArray{T,N}, fct, bg, intensity, off, sca, args...; operation = *, all_axes = get_bc_mem(typeof(data), size(data), operation)) where {T,N}
     sz = size(data)
-    y = calculate_separables_nokw(typeof(data), fct, sz, off, sca, args...; all_axes=all_axes)
+    # mid = sz .÷ 2 .+ 1
+    # off = off .+ mid
+    ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(N)) # offset==args[1] and scale==args[2]
+    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(off), one(eltype(data)))
 
-    dy = ntuple((d) -> 2*sum((y[d] .- data), dims=d), Val(N))
+    by = calculate_broadcasted_nokw(typeof(data), fct, sz, off, sca, args...; operation=operation, all_axes=all_axes)
+
+    resid = bg .+ intensity .* by .- data
+    dfdbg = 2*sum(resid)
+
+    # @time loss = sum(resid .* resid)
+    # loss = sum(abs2.(resid))
+    loss = mapreduce(abs2, +, resid; init=zero(T))
+    # loss = sum(sum(abs2.(resid), dims=1))
+    y = by.args
+    other_dims = ntuple((d)-> (ntuple((n)->n, d-1)..., ntuple((n)->d+n, N-d)...), Val(N))
+    # @show other_dims
+    other_ys = ntuple((d)-> (ntuple((n)->y[n], d-1)..., ntuple((n)->y[d+n], N-d)...), Val(N))
+    # moved 2*intensity to the condensed terms, but logically it should be in dy!
+    # this is fairly expensive in memory:
+    @time dy = ntuple((d) -> sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d]), Val(N))
+    # dy = ntuple((d) -> mapreduce(.*, +, resid, other_ys[d]..., dims=other_dims[d]), Val(N))
+    # @show size(dy[1])
+    # @show size(dy[2])
+
     yv = ntuple((d) -> (@view y[d][:]), Val(N))
     dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
-    doffset = optional_convert(off, ntuple((d) -> .- pick_n(d, args[2]) .* 
+    args_1d = ntuple((d)-> pick_n.(d, args), Val(N))
+
+    doffset = optional_convert(off, ntuple((d) -> (-2*intensity*pick_n(d, sca)) .* 
         get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+    # doffset = (0f0,0f0)
+        
+    # SCALE needs checking. Probably wrong!
+    dscale = optional_convert(sca, ntuple((d) -> 
+    (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+    # dscale = (0f0,0f0)
 
     dargs = ntuple((argno) -> optional_convert(args[argno],
-        ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
+    (2*intensity).*ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
+    # dargs = (0f0,0f0)
 
-    dscale = optional_convert(sca, ntuple((d) -> 
-        get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-    return y, doffset, dscale, dargs...
+    # resid .*= by # is slower!
+    dfdI = 2*sum(resid.*by)
+    return loss, dfdbg, dfdI, doffset, dscale, dargs...
 end
 
 function calculate_broadcasted_nokw(fct, sz::NTuple{N, Int}, args...; 
