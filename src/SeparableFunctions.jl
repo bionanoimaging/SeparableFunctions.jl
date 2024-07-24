@@ -45,6 +45,8 @@ export calc_radial_symm!, calc_radial_symm, get_corner_ranges
 export radial_speedup, radial_speedup_ifa
 export kwargs_to_args
 
+export loss_anscombe, loss_anscombe_pos, loss_gaussian, loss_poisson, loss_poisson_pos 
+
 DefaultResElType = Float32
 DefaultArrType = Array{DefaultResElType}
 DefaultComplexArrType = Array{complex(DefaultResElType)}

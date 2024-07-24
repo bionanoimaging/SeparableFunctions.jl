@@ -29,10 +29,10 @@ mid = sz.÷2 .+1
 myxx = Float32.(xx((sz[1],1)))
 myyy = Float32.(yy((1, sz[2])))
 
-my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.(vec.sca[1].*(myxx .- vec.off[1])./(sqrt(2f0)*vec.args[1])) .- abs2.(vec.sca[2].*(myyy .- vec.off[2])./(sqrt(2f0)*vec.args[2])))
+my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.((myxx .- vec.off[1])./(sqrt(2f0)*vec.args[1])) .- abs2.((myyy .- vec.off[2])./(sqrt(2f0)*vec.args[2])))
 # my_full_gaussian(vec) = vec.bg .+ vec.intensity.*exp.(.-abs2.(vec.sca[1].*(myxx .- vec.off[1])./(sqrt(2f0)*vec.sigma[1]))).*exp.(.- abs2.(vec.sca[2].*(myyy .- vec.off[2])./(sqrt(2f0)*vec.sigma[2])))
 
-vec_true = ComponentVector(;bg=0.2f0, intensity=1.0f0, sca= (1f0, 1f0), off = (2.2f0, 3.3f0), args = (2.4f0, 1.5f0))
+vec_true = ComponentVector(;bg=0.2f0, intensity=1.0f0, off = (2.2f0, 3.3f0), args = (2.4f0, 1.5f0))
 # @btime my_full_gaussian($vec_true); # 42.800 μs (18 allocations: 16.70 KiB)
 
 Random.seed!(42)
@@ -41,8 +41,8 @@ dat_copy = copy(dat)
 
 loss = (vec) -> sum(abs2.(my_full_gaussian(vec) .- dat))
 
-bc_mem = gaussian_nokw_sep(sz, vec_true.off.+mid, vec_true.sca, vec_true.args)
-my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off .+mid, vec.sca, vec.args; all_axes=bc_mem)
+bc_mem = gaussian_nokw_sep(sz, vec_true.off.+mid, 1f0, vec_true.args)
+my_sep_gaussian(vec) = vec.bg .+ vec.intensity .* gaussian_nokw_sep(sz, vec.off .+mid, 1f0, vec.args; all_axes=bc_mem)
 loss_sep = (vec) -> sum(abs2.(my_sep_gaussian(vec) .- dat))
 
 # off_start = (2.0f0, 3.0f0)
@@ -51,8 +51,8 @@ loss_sep = (vec) -> sum(abs2.(my_sep_gaussian(vec) .- dat))
 off_start = [2.0f0, 3.0f0]
 # off_start = [-32f0, -32f0]
 sigma_start = [3.0f0, 2.0f0]
-sca_start = [1.2f0, 1.5f0]
-startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, sca=sca_start, off=off_start, args=sigma_start)
+# sca_start = [1.2f0, 1.5f0]
+startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, off=off_start, args=sigma_start)
 
 # @vt dat my_full_gaussian(startvals) my_sep_gaussian(startvals)
 
@@ -82,9 +82,9 @@ v, g = value_and_gradient(loss_sep, AutoZygote(),  startvals) #     (54.162834f0
 # v, g = value_and_gradient(loss_sep, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
 mymem = get_bc_mem(typeof(dat), size(dat), *)
-@time fg!(dat, gaussian_raw, startvals.bg, startvals.intensity, startvals.off .+ sz.÷2 .+1, startvals.sca, startvals.sigma; all_axes=mymem)
+@time fg!(dat, gaussian_raw, startvals.bg, startvals.intensity, startvals.off .+ sz.÷2 .+1, startvals.sigma; all_axes=mymem)
 
-@btime fg!($dat, $gaussian_raw, $startvals.bg, $startvals.intensity, $startvals.off .+ $sz.÷2 .+1, startvals.sca, $startvals.sigma; all_axes=$mymem)
+@btime fg!($dat, $gaussian_raw, $startvals.bg, $startvals.intensity, $startvals.off .+ $sz.÷2 .+1, $startvals.sigma; all_axes=$mymem)
 # 35.3 µs, 165 allocs, 126 kB
 
 # broken!
@@ -136,17 +136,17 @@ function fg!(F, G, vec)
     end
 end
 
-myfg! = get_fg!(dat, gaussian_raw)
+myfg! = get_fg!(dat, gaussian_raw, loss=loss_anscombe_pos)
 
 startvals_s = copy(startvals)
 startvals_s.off .+= sz.÷2 .+1
 G = copy(startvals)
 myfg!(1, G, startvals_s)
-
+G
 od = OnceDifferentiable(Optim.NLSolversBase.only_fg!(fg!), startvals);
 @time res = Optim.optimize(od, startvals,  Optim.LBFGS(), opt)
-res.f_calls # 33
-res.minimum # 13.9137
+res.f_calls # 31
+res.minimum # 13.927
 # res.f_calls = 0
 
 loss(startvals)
@@ -157,15 +157,15 @@ od = OnceDifferentiable(Optim.NLSolversBase.only_fg!(fg!), startvals);
 # Full: 4.804 ms (14435 allocations: 12.78 MiB)
 # Sep: 4.099 ms (26269 allocations: 11.20 MiB)
 # Hand-Separated: 2.397 ms (15472 allocations: 9.19 MiB)
-# 2.8 ms
+# 2.5 ms
 
 myfg!(1.0, G, startvals_s)
 G
 # opt = Optim.Options(iterations = 9); # why ?
 odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals_s);
 @time reso = Optim.optimize(odo, startvals_s, Optim.LBFGS(), opt);
-reso.f_calls # 33
-reso.minimum # 13.9138
+reso.f_calls # 31
+reso.minimum # 13.927
 
 odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals_s);
 @btime reso = Optim.optimize($odo, $startvals_s, Optim.LBFGS(), $opt);
@@ -176,11 +176,12 @@ using InverseModeling
 gstartvals = ComponentVector(;offset = startvals.bg, i0=startvals.intensity, µ=startvals.off, σ=startvals.args)
 @time res1, res2, res3 = gauss_fit(dat, gstartvals; iterations = 9);
 res3.f_calls
+res3.minimum
 vec_true
 res1
 
 @btime res1, res2, res3 = gauss_fit($dat, $gstartvals; x_reltol=0.001);
-# 4.214 ms (27575 allocations: 8.12 MiB)
+# 4.37 ms (27575 allocations: 8.12 MiB)
 @vt dat res2 (res2 .- dat)
 
 # @btime Optim.optimize($loss, $off_start, $sigma_start, LBFGS(); autodiff = :forward); # 1.000 ms (10001 allocations: 1.53 MiB)

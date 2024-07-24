@@ -359,24 +359,86 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     return y, calculate_separables_nokw_hook_pullback
 end
 
-function get_fg!(data::AbstractArray{T,N}, fct) where {T,N}
+# from InverseModeling.jl
+loss_gaussian(data::AbstractArray{T}, fwd, bg=zero(T)) where {T} = mapreduce(abs2, +, fwd .- data ; init=zero(T))
+function get_fgC!(data::AbstractArray{T,N}, ::typeof(loss_gaussian), bg=zero(T)) where {T,N}
+    function fg!(F, G, fwd)
+        if !isnothing(G)
+            G .= (fwd .- data)
+            return (!isnothing(F)) ? mapreduce(abs2, +, G; init=zero(T)) :  T(0);
+        end
+        return (!isnothing(F)) ? mapreduce(abs2, +, (fwd .- data); init=zero(T)) : T(0);
+    end
+    return fg!, 2
+end
+
+loss_poisson(data::AbstractArray{T}, fwd, bg=zero(T)) where {T} = sum((fwd.+bg) .- (data.+bg).*log.(fwd.+bg))
+function get_fgC!(data::AbstractArray{T,N}, ::typeof(loss_poisson), bg=zero(T)) where {T,N}
+    function fg!(F, G, fwd)
+        if !isnothing(G)
+            G .= one(T) .- (data .+ bg)./max.(fwd .+ bg, max(b, T(1f-10)))
+        end
+        return (!isnothing(F)) ? reduce(+, (fwd.+bg) .- (data.+bg).*log.(fwd.+bg); init=zero(T)) : T(0);
+    end
+    return fg!, 1
+end
+
+loss_poisson_pos(data::AbstractArray{T}, fwd, bg=zero(T)) where {T} = sum(max.(eltype(fwd)(0),fwd.+bg) .- max.(eltype(fwd)(0),data.+bg).*log.(max.(eltype(fwd)(0),fwd.+bg)))
+function get_fgC!(data::AbstractArray{T,N}, ::typeof(loss_poisson_pos), bg=zero(T)) where {T,N}
+    function fg!(F, G, fwd)
+        if !isnothing(G)
+            G .= one(T) .- (data .+ bg)./max.(fwd .+ bg, T(1f-10))
+        end
+        return (!isnothing(F)) ? reduce(+, max.(eltype(fwd)(0),(fwd.+bg)) .- max.(eltype(fwd)(0),(data.+bg)).*log.(max.(eltype(fwd)(0),fwd.+bg)); init=zero(T)) : T(0);
+    end
+    return fg!, 1
+end
+
+loss_anscombe(data::AbstractArray{T}, fwd, bg=zero(T)) where {T} = sum(abs2.(sqrt.(data.+bg) .- sqrt.(fwd.+bg)))
+function get_fgC!(data::AbstractArray{T,N}, ::typeof(loss_anscombe), bg=zero(T)) where {T,N}
+    function fg!(F, G, fwd)
+        if !isnothing(G)
+            G .= one(T) .- sqrt.(data.+bg)./sqrt.(max.(fwd .+ bg, max(bg, T(1f-10))))
+        end
+        return (!isnothing(F)) ? mapreduce(abs2, +, sqrt.(fwd.+bg) .- sqrt.(data.+bg); init=zero(T)) : T(0);
+    end
+    return fg!, 1
+end
+
+loss_anscombe_pos(data::AbstractArray{T}, fwd, bg=zero(T)) where {T} = sum(abs2.(sqrt.(max.(eltype(fwd)(0),fwd.+bg)) .- sqrt.(max.(eltype(fwd)(0),data.+bg))))
+
+function get_fgC!(data::AbstractArray{T,N}, ::typeof(loss_anscombe_pos), bg=zero(T)) where {T,N}
+    function fg!(F, G, fwd)
+        if !isnothing(G)
+            G .= one(T) .- sqrt.(max.(eltype(fwd)(0), data.+bg))./sqrt.(max.(fwd .+ bg, max(bg, T(1f-10))))
+        end
+        return (!isnothing(F)) ? mapreduce(abs2, +, sqrt.(max.(eltype(fwd)(0), fwd.+bg)) .- sqrt.(max.(eltype(fwd)(0),data.+bg)); init=zero(T)) : T(0);
+    end
+    return fg!, 1
+end
+
+
+function get_fg!(data::AbstractArray{T,N}, fct; loss = loss_gaussian, bg=zero(real(T))) where {T,N}
     RT = real(eltype(data))
     operator = get_operator(fct)
     by = get_bc_mem(typeof(data), size(data), operator)
     y = by.args
     yv = ntuple((d) -> (@view y[d][:]), Val(N))
 
-    resid = similar(data)
     dy = get_sep_mem(typeof(data), size(data))
     dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
 
+    resid = similar(data) # checkpoint
+
+    loss_fg!, C = get_fgC!(data, loss, bg)
+
     # this function returns the forward value and mutates the gradient G
     function fg!(F, G, vec)
-        bg = hasfield(vec, :bg) ? vec.bg : zero(RT);
-        intensity = hasfield(vec, :intensity) ? vec.intensity : one(RT)
-        off = hasfield(vec, :off) ? vec.off : RT.(sz.÷2 .+1)
-        sca = hasfield(vec, :sca) ? vec.sca : one(RT);
-        args = hasfield(vec, :args) ? (vec.args,) : one(RT)
+        bg = hasproperty(vec, :bg) ? vec.bg : zero(RT);
+        intensity = hasproperty(vec, :intensity) ? vec.intensity : one(RT)
+        off = hasproperty(vec, :off) ? vec.off : RT.(sz.÷2 .+1)
+        sca = hasproperty(vec, :sca) ? vec.sca : one(RT);
+        args = hasproperty(vec, :args) ? (vec.args,) : one(RT)
         sz = size(data)
         # mid = sz .÷ 2 .+ 1
         # off = off .+ mid
@@ -386,11 +448,12 @@ function get_fg!(data::AbstractArray{T,N}, fct) where {T,N}
         # 5kB, result is in by
         calculate_broadcasted_nokw(typeof(data), fct, sz, off, sca, args...; operator=operator, all_axes=by)
 
-        if !isnothing(F) || !isnothing(G)
-            resid .= bg .+ intensity .* by .- data
-        end
+        # if !isnothing(F) || !isnothing(G)
+        #     resid .= bg .+ intensity .* by .- data
+        # end
+        loss = loss_fg!(F, resid, bg .+ intensity .* by)
         if !isnothing(G)
-            G.bg = 2*sum(resid)
+            G.bg = C*sum(resid)
 
             other_dims = ntuple((d)-> (ntuple((n)->n, d-1)..., ntuple((n)->d+n, N-d)...), Val(N))
             # @show other_dims
@@ -411,25 +474,25 @@ function get_fg!(data::AbstractArray{T,N}, fct) where {T,N}
 
             args_1d = ntuple((d)-> pick_n.(d, args), Val(N))
 
-            if hasfield(vec, :off)
-                G.off = optional_convert(off, ntuple((d) -> (-2*intensity*pick_n(d, sca)) .* 
+            if hasproperty(vec, :off)
+                G.off = optional_convert(off, ntuple((d) -> (-C*intensity*pick_n(d, sca)) .* 
                 get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
             end
 
-            if hasfield(vec, :args)
+            if hasproperty(vec, :args)
                 dargs = ntuple((argno) -> optional_convert(args[argno],
-                (2*intensity).*ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
+                (C*intensity).*ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
                 G.args = dargs[1]
             end
             # dargs = (0f0,0f0)
 
-            if hasfield(vec, :sca)
+            if hasproperty(vec, :sca)
                 # missuse the dy memory
                 for d = 1:N
                     dyv[d] .= dyv[d].* ids_offset_only[d]
                 end
                 G.sca = optional_convert(sca, ntuple((d) -> 
-                (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+                (C*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
             end
                 # 1.5 kB:
             # (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
@@ -437,12 +500,12 @@ function get_fg!(data::AbstractArray{T,N}, fct) where {T,N}
         end
 
         # return loss, dfdbg, dfdI, doffset, dscale, dargs...
-        loss = (!isnothing(F)) ? mapreduce(abs2, +, resid; init=zero(T)) : T(0);
+        # loss = (!isnothing(F)) ? mapreduce(abs2, +, resid; init=zero(T)) : T(0);
 
         if !isnothing(G) # forward needs to be calculated
             # resid .*= by # is slower!
             resid .= resid .* by
-            G.intensity = 2*sum(resid)
+            G.intensity = C*sum(resid)
             # G.intensity = 2*sum(resid.*by)
         end
 

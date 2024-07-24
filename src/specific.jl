@@ -176,7 +176,23 @@ for F in generate_functions_expr()
         # operator=$(F[5])
         # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operator
     end
- 
+
+    @eval function $(Symbol(F[1], :_vec))(::Type{TA}, sz::NTuple{N, Int}, vec;
+        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5])) ) where {TA, N}
+        RT = real(eltype(TA))
+        intensity = (hasproperty(vec, :intensity)) ? vec.intensity : one(RT)
+        bg = (hasproperty(vec, :bg)) ? vec.bg : zero(RT)
+        off = (hasproperty(vec, :off)) ? vec.off : sz .÷ 2 .+ 1
+        sca = (hasproperty(vec, :sca)) ? vec.sca : ones(RT, length(sz))
+        args = (hasproperty(vec, :args)) ? (vec.args,) : Tuple([])
+        return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(sz, off, sca, args...; all_axes=all_axes))
+    end
+
+    @eval function $(Symbol(F[1], :_vec))(sz::NTuple{N, Int}, vec;
+        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5])) ) where {N}
+        return $(Symbol(F[1], :_vec))(Array{$(F[4])}, sz, vec; all_axes=all_axes)        
+    end
+
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
         separable_view(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
@@ -191,6 +207,8 @@ for F in generate_functions_expr()
     @eval export $(Symbol(F[1], :_col))
     # separated: a vector of separated contributions is returned and the user has to combine them
     @eval export $(Symbol(F[1], :_sep))
+    # a broadcasted version which accepts a ComponentArray as an input
+    @eval export $(Symbol(F[1], :_vec))
     # lazy: A LazyArray representation is returned
     @eval export $(Symbol(F[1], :_nokw_sep))
     # @eval export $(Symbol(F[1], :_lz))
