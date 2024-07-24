@@ -85,6 +85,14 @@ function kwargs_to_args(defaults, kwargs)
 end
 
 
+"""
+    broadcast_reduce(f, op, A...; dims, init)
+
+broadcasts the function `f` over the arrays `A` and reduces the result with the operation `op` but requiring less memory.
+
+modified from code by @torrence:
+https://discourse.julialang.org/t/mapreduce-with-broadcasting/77053/7?u=rainerheintzmann
+"""
 function broadcast_reduce(f, op, A...; dims, init)
     bc = Broadcast.instantiate(Broadcast.broadcasted(f, A...))
     return reduce(op, bc; dims, init)

@@ -62,10 +62,10 @@ end
 
 # would be nice to have a macro which defines all those function extensions.
 # But its not quite that simple. First try:
-# macro define_separable(basename, fct, basetype, operation)
+# macro define_separable(basename, fct, basetype, operator)
 #     @eval function $(Symbol(basename, :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
 #         fct = $(fct) # to assign the function to a symbol
-#         separable_create(TA, fct, sz, args...; operation=$(operation), kwargs...)
+#         separable_create(TA, fct, sz, args...; operator=$(operator), kwargs...)
 #     end
 # end
 
@@ -132,25 +132,28 @@ for F in generate_functions_expr()
         end
         # @show "added rrule for $(Symbol(F[1], :_raw))"
     end
+    @eval function get_operator(::typeof($(Symbol(F[1], :_raw)))) 
+        return $(F[5])
+    end
 
     @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_create(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        separable_create(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_create(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        separable_create(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
@@ -159,9 +162,9 @@ for F in generate_functions_expr()
         # fct = $(F[3]) # to assign the function to a symbol
 
         # @show "call"
-        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
-        # operation=$(F[5])
-        # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operation
+        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
+        # operator=$(F[5])
+        # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operator
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
@@ -169,19 +172,19 @@ for F in generate_functions_expr()
                     ) where {N}
         # fct = $(F[3]) # to assign the function to a symbol        
         # @show "call2"
-        return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operation=$(F[5]), all_axes=all_axes)
-        # operation=$(F[5])
-        # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operation
+        return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
+        # operator=$(F[5])
+        # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operator
     end
  
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_view(TA, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        separable_view(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_view(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operation=$(F[5]), kwargs...)
+        separable_view(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     # collected: fast separable calculation but resulting in an ND array

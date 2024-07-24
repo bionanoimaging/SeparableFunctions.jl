@@ -2,7 +2,7 @@
     calculate_separables_nokw([::Type{AT},] fct, sz::NTuple{N, Int}, offset = sz.÷2 .+1, scale = one(real(eltype(AT))),
                                 args...;all_axes = get_sep_mem(AT, sz), kwargs...) where {AT, N}
 
-creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
+creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operator.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
 This function is used in `separable_view` and `separable_create`.
 
@@ -80,12 +80,13 @@ end
 """
     get_bc_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
 
-allocates a contingous memory for the separable functions and wraps it into an instantiate broadcast structure.
+allocates a contigous memory block for the separable functions and wraps it into an instantiate broadcast (bc) structure including the bc-`operator`.
 This structure is also returned by functions like `gaussian_sep` and can  be reused by supplying it via the
-keyword argument `all_axes`.
+keyword argument `all_axes`. To obtain the bc-operator for predefined functions use `get_operator(fct)` with `fct`
+being the `raw_` version of the function, e.g. `get_operator(gassian_raw)`
 """
-function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operation) where {AT, N}
-    return Broadcast.instantiate(Broadcast.broadcasted(operation, get_sep_mem(AT, sz)...))
+function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator) where {AT, N}
+    return Broadcast.instantiate(Broadcast.broadcasted(operator, get_sep_mem(AT, sz)...))
 end
 
 # a special in-place assignment, which gets its own differentiation rule for the reverse mode 
@@ -146,7 +147,7 @@ end
                                     scale = one(real(eltype(AT))),
                                     kwargs...) where {AT, N}
 
-creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operation.
+creates a list of one-dimensional vectors, which can be combined to yield a separable array. In a way this can be seen as a half-way Lazy operator.
 The (potentially heavy) work of calculating the one-dimensional functions is done now but the memory-heavy calculation of the array is done later.
 This function is used in `separable_view` and `separable_create`.
 For automatic differentiation support (e.g. for opinizing) you should use the `calculate_separables_nokw` function, since it supports AD, whereas the keyword-based version does not.
@@ -201,10 +202,10 @@ end
 
 
 """
-    calculate_broadcasted([::Type{TA},] fct, sz::NTuple{N, Int}, args...; offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operation = *, kwargs...) where {TA, N}
+    calculate_broadcasted([::Type{TA},] fct, sz::NTuple{N, Int}, args...; offset=sz.÷2 .+1, scale=one(real(eltype(DefaultArrType))), operator = *, kwargs...) where {TA, N}
 
 returns an instantiated broadcasted separable array, which essentially behaves almost like an array yet uses broadcasting. Test revealed maximal speed improvements for this version.
-Yet, a problem is that reduce operations with specified dimensions cause an error. However this can be avoided by calling `collect`.
+Yet, a problem is that reduce operators with specified dimensions cause an error. However this can be avoided by calling `collect`.
 
 # Arguments:
 + `fct`:          The separable function, with a number of arguments corresponding to `length(args)`, each corresponding to a vector of separable inputs of length N.
@@ -214,7 +215,7 @@ Yet, a problem is that reduce operations with specified dimensions cause an erro
 + `all_axes`: if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
-+ `operation`:    the separable operation connecting the separable dimensions
++ `operator`:    the separable operator connecting the separable dimensions
 
 ```jldoctest
 julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
@@ -233,42 +234,42 @@ julia> collect(my_gaussian)
 ```
 """
 function calculate_broadcasted(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-        operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    operator = *, all_axes = get_bc_mem(AT, sz, operator),
         kwargs...) where {AT, N}
     # replace the sep memory inside the broadcast structure with new values:
     calculate_separables(AT, fct, sz, args...; all_axes=all_axes.args, kwargs...)
     return all_axes
-    # Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+    # Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
 end
 
 function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; 
-        operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    operator = *, all_axes = get_bc_mem(AT, sz, operator),
         kwargs...) where {N}
         calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
         return all_axes
-        # Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+        # Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
 end
 
 # function calculate_sep_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
 #     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
-#     operation = *, defaults = nothing, kwargs...) where {AT, N}
+#     operator = *, defaults = nothing, kwargs...) where {AT, N}
 #     # defaults should be evaluated here and filled into args...
 #     return calculate_separables_nokw(AT, fct, sz, args...; all_axes=all_axes, kwargs...)
 # end
 
 # function calculate_sep_nokw(fct, sz::NTuple{N, Int}, args...; 
 #     all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
-#     operation = *, defaults = nothing, kwargs...) where {N}
+#     operator = *, defaults = nothing, kwargs...) where {N}
 #     return calculate_separables_nokw(AT, fct, sz, args...; all_axes=all_axes, kwargs...)
 # end
 
 ### Versions where offst and scale are without keyword arguments
 function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    operator = *, all_axes = get_bc_mem(AT, sz, operator),
     defaults = nothing, kwargs...) where {AT, N}
     # defaults should be evaluated here and filled into args...
     calculate_separables_nokw_hook(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
-    # res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+    # res = Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
     # @show eltype(collect(res))
     return all_axes
 end
@@ -284,14 +285,14 @@ end
 # this code only works for the multiplicative version and actually only saves very few allocations.
 # it's not worth the specialization:
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_broadcasted_nokw), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
-    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    operator = *, all_axes = get_bc_mem(AT, sz, operator),
     defaults = nothing, kwargs...) where {AT, N}
     # println("in rrule broadcast")
     # y = calculate_broadcasted_nokw(AT, fct, sz, args..., kwargs...)
     y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; all_axes=all_axes.args, kwargs...)
     # println("y done")
-    # y = Broadcast.instantiate(Broadcast.broadcasted(operation, y_sep...))
-    y = operation.(y_sep...) # is faster than the broadcast above.
+    # y = Broadcast.instantiate(Broadcast.broadcasted(operator, y_sep...))
+    y = operator.(y_sep...) # is faster than the broadcast above.
     # @show size(y_sep[1])
     # @show size(y_sep[2])
     # @show size(y)
@@ -301,7 +302,7 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
         # @show size(dy)
         projected = ntuple((d) -> begin
             dims=((1:d-1)...,(d+1:N)...)
-            reduce(+, operation.(y_sep[[dims...]]...) .* dy, dims=dims)
+            reduce(+, operator.(y_sep[[dims...]]...) .* dy, dims=dims)
             end, Val(N)) # 7 Mb
         # @show typeof(projected[1])
         # @show size(projected[1])
@@ -358,61 +359,104 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     return y, calculate_separables_nokw_hook_pullback
 end
 
-function fg!(data::AbstractArray{T,N}, fct, bg, intensity, off, sca, args...; operation = *, all_axes = get_bc_mem(typeof(data), size(data), operation)) where {T,N}
-    sz = size(data)
-    # mid = sz .÷ 2 .+ 1
-    # off = off .+ mid
-    ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(N)) # offset==args[1] and scale==args[2]
-    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(off), one(eltype(data)))
-
-    by = calculate_broadcasted_nokw(typeof(data), fct, sz, off, sca, args...; operation=operation, all_axes=all_axes)
-
-    resid = bg .+ intensity .* by .- data
-    dfdbg = 2*sum(resid)
-
-    # @time loss = sum(resid .* resid)
-    # loss = sum(abs2.(resid))
-    loss = mapreduce(abs2, +, resid; init=zero(T))
-    # loss = sum(sum(abs2.(resid), dims=1))
+function get_fg!(data::AbstractArray{T,N}, fct) where {T,N}
+    RT = real(eltype(data))
+    operator = get_operator(fct)
+    by = get_bc_mem(typeof(data), size(data), operator)
     y = by.args
-    other_dims = ntuple((d)-> (ntuple((n)->n, d-1)..., ntuple((n)->d+n, N-d)...), Val(N))
-    # @show other_dims
-    other_ys = ntuple((d)-> (ntuple((n)->y[n], d-1)..., ntuple((n)->y[d+n], N-d)...), Val(N))
-    # moved 2*intensity to the condensed terms, but logically it should be in dy!
-    # this is fairly expensive in memory:
-    dy = ntuple((d) -> sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d]), Val(N))
-    # less memory, but a little slower:
-    # dy = ntuple((d) -> broadcast_reduce(*, +, resid, other_ys[d]..., dims=other_dims[d], init=zero(T)), Val(N))
-    # @time dy = ntuple((d) -> mapreduce(*, +, resid, other_ys[d]...), dims=other_dims[d]), Val(N))
-
     yv = ntuple((d) -> (@view y[d][:]), Val(N))
+
+    resid = similar(data)
+    dy = get_sep_mem(typeof(data), size(data))
     dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
-    args_1d = ntuple((d)-> pick_n.(d, args), Val(N))
 
-    doffset = optional_convert(off, ntuple((d) -> (-2*intensity*pick_n(d, sca)) .* 
-        get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-    # doffset = (0f0,0f0)
-        
-    # SCALE needs checking. Probably wrong!
-    dscale = optional_convert(sca, ntuple((d) -> 
-    (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
-    # dscale = (0f0,0f0)
+    # this function returns the forward value and mutates the gradient G
+    function fg!(F, G, vec)
+        bg = hasfield(vec, :bg) ? vec.bg : zero(RT);
+        intensity = hasfield(vec, :intensity) ? vec.intensity : one(RT)
+        off = hasfield(vec, :off) ? vec.off : RT.(sz.÷2 .+1)
+        sca = hasfield(vec, :sca) ? vec.sca : one(RT);
+        args = hasfield(vec, :args) ? (vec.args,) : one(RT)
+        sz = size(data)
+        # mid = sz .÷ 2 .+ 1
+        # off = off .+ mid
+        ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(N)) # offset==args[1] and scale==args[2]
+        ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(off), one(eltype(data)))
 
-    dargs = ntuple((argno) -> optional_convert(args[argno],
-    (2*intensity).*ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
-    # dargs = (0f0,0f0)
+        # 5kB, result is in by
+        calculate_broadcasted_nokw(typeof(data), fct, sz, off, sca, args...; operator=operator, all_axes=by)
 
-    # resid .*= by # is slower!
-    dfdI = 2*sum(resid.*by)
-    return loss, dfdbg, dfdI, doffset, dscale, dargs...
+        if !isnothing(F) || !isnothing(G)
+            resid .= bg .+ intensity .* by .- data
+        end
+        if !isnothing(G)
+            G.bg = 2*sum(resid)
+
+            other_dims = ntuple((d)-> (ntuple((n)->n, d-1)..., ntuple((n)->d+n, N-d)...), Val(N))
+            # @show other_dims
+            other_ys = ntuple((d)-> (ntuple((n)->y[n], d-1)..., ntuple((n)->y[d+n], N-d)...), Val(N))
+            # moved 2*intensity to the condensed terms, but logically it should be in dy!
+            # this is fairly expensive in memory:
+            # dy = ntuple((d) -> sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d]), Val(N))
+
+            for d in 1:N
+                # This costs 33 kB allocation, sometimes it can be faster?
+                # dy[d] .= sum(resid.* (.*(other_ys[d]...)), dims=other_dims[d])
+                # this costs 2 kB allocations but is slower
+                dy[d] .= broadcast_reduce(*, +, resid, other_ys[d]..., dims=other_dims[d], init=zero(T))
+            end
+            # less memory, but a little slower:
+            # dy = ntuple((d) -> broadcast_reduce(*, +, resid, other_ys[d]..., dims=other_dims[d], init=zero(T)), Val(N))
+            # @time dy = ntuple((d) -> mapreduce(*, +, resid, other_ys[d]...), dims=other_dims[d]), Val(N))
+
+            args_1d = ntuple((d)-> pick_n.(d, args), Val(N))
+
+            if hasfield(vec, :off)
+                G.off = optional_convert(off, ntuple((d) -> (-2*intensity*pick_n(d, sca)) .* 
+                get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+            end
+
+            if hasfield(vec, :args)
+                dargs = ntuple((argno) -> optional_convert(args[argno],
+                (2*intensity).*ntuple((d) -> get_arg_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
+                G.args = dargs[1]
+            end
+            # dargs = (0f0,0f0)
+
+            if hasfield(vec, :sca)
+                # missuse the dy memory
+                for d = 1:N
+                    dyv[d] .= dyv[d].* ids_offset_only[d]
+                end
+                G.sca = optional_convert(sca, ntuple((d) -> 
+                (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+            end
+                # 1.5 kB:
+            # (2*intensity).*get_idx_gradient(fct, yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+            # dscale = (0f0,0f0)
+        end
+
+        # return loss, dfdbg, dfdI, doffset, dscale, dargs...
+        loss = (!isnothing(F)) ? mapreduce(abs2, +, resid; init=zero(T)) : T(0);
+
+        if !isnothing(G) # forward needs to be calculated
+            # resid .*= by # is slower!
+            resid .= resid .* by
+            G.intensity = 2*sum(resid)
+            # G.intensity = 2*sum(resid.*by)
+        end
+
+        return loss
+        end
+    return fg!
 end
 
 function calculate_broadcasted_nokw(fct, sz::NTuple{N, Int}, args...; 
-    operation = *, all_axes = get_bc_mem(AT, sz, operation),
+    operator = *, all_axes = get_bc_mem(AT, sz, operator),
     defaults = nothing, kwargs...) where {N}
     # defaults should be evaluated here and filled into args...
     calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
-    # res = Broadcast.instantiate(Broadcast.broadcasted(operation, calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+    # res = Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables_nokw(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
     # @show eltype(collect(res))
     return all_axes
 end
@@ -426,7 +470,7 @@ end
 
 
 """
-    separable_view{N}(fct, sz, args...; offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operation = .*)
+    separable_view{N}(fct, sz, args...; offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operator = .*)
 
 creates an `LazyArray` view of an N-dimensional separable function.
 Note that this view consumes much less memory than a full allocation of the collected result.
@@ -441,7 +485,7 @@ See the example below.
 + `all_axes`:     if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
-+ `operation`:    the separable operation connecting the separable dimensions
++ `operator`:    the separable operator connecting the separable dimensions
 
 # Example:
 ```jldoctest
@@ -458,19 +502,19 @@ julia> my_gaussian = separable_view(fct, (6,5), (0.1,0.2), (0.5,1.0))
 """
 function separable_view(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
         all_axes = get_sep_mem(AT, sz),
-        operation = *, kwargs...) where {AT, N}
+        operator = *, kwargs...) where {AT, N}
     res = calculate_separables(AT, fct, sz, args...; all_axes = all_axes, kwargs...)
-    return LazyArray(@~ operation.(res...)) # to prevent premature evaluation
+    return LazyArray(@~ operator.(res...)) # to prevent premature evaluation
 end
 
 function separable_view(fct, sz::NTuple{N, Int}, args...; 
         all_axes = get_sep_mem(DefaultArrType, sz),
-        operation = *, kwargs...) where {N}
-    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; all_axes = all_axes, operation=operation, kwargs...)
+        operator = *, kwargs...) where {N}
+    separable_view(DefaultArrType, fct, sz::NTuple{N, Int}, args...; all_axes = all_axes, operator=operator, kwargs...)
 end
 
 """
-    separable_create([::Type{TA},] fct, sz::NTuple{N, Int}, args...; offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operation = *, kwargs...) where {TA, N}
+    separable_create([::Type{TA},] fct, sz::NTuple{N, Int}, args...; offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operator = *, kwargs...) where {TA, N}
 
 creates an array view of an N-dimensional separable function including memory allocation and collection.
 See the example below.
@@ -483,7 +527,7 @@ See the example below.
 + `all_axes`:     if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
-+ `operation`:    the separable operation connecting the separable dimensions
++ `operator`:    the separable operator connecting the separable dimensions
 
 # Example:
 ```julia
@@ -498,19 +542,19 @@ julia> my_gaussian = separable_create(fct, (6,5), (0.5,1.0); )
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operation::Function = *, kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
+function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operator::Function = *, kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
     # res = calculate_separables(TA, fct, sz, args...; kwargs...)
-    # operation.(res...)
+    # operator.(res...)
     res = similar(TA, sz)
-    res .= calculate_broadcasted(TA, fct, sz, args...; operation=operation, kwargs...)
+    res .= calculate_broadcasted(TA, fct, sz, args...; operator=operator, kwargs...)
     return res
 end
 
 ## the code below seems not type-stable but the code above is. Why?
-function separable_create(fct, sz::NTuple{N, Int}, args...; operation::Function = *, kwargs...)::similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)) where {N}
+function separable_create(fct, sz::NTuple{N, Int}, args...; operator::Function = *, kwargs...)::similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)) where {N}
     # TT = similar_arr_type(DefaultArrType, Float32, Val(N))
     # res = calculate_separables(similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)), fct, sz, args...; kwargs...)
-    # return operation.(res...)
+    # return operator.(res...)
     # resT = 
-    separable_create(similar_arr_type(DefaultArrType, Float32, Val(N)), fct, sz, args...; operation=operation, kwargs...)
+    separable_create(similar_arr_type(DefaultArrType, Float32, Val(N)), fct, sz, args...; operator=operator, kwargs...)
 end

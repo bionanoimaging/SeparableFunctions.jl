@@ -38,8 +38,8 @@ export calculate_separables_nokw, calculate_separables, separable_view, separabl
 export calculate_broadcasted
 export copy_corners!
 export propagator_col, propagator_col!, phase_kz_col, phase_kz_col!
-export get_sep_mem, get_bc_mem
-export fg!
+export get_sep_mem, get_bc_mem, get_operator
+export get_fg!
 
 export calc_radial_symm!, calc_radial_symm, get_corner_ranges
 export radial_speedup, radial_speedup_ifa
