@@ -84,14 +84,14 @@ for F in generate_functions_expr()
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy)
             # println("in set_idx_gradient")
             # return dot(dy, $(F[6]).(y, x, sz))
-            return mapreduce(*, +, $(F[6]).(y, x, sz),; dims=1:prod_dims)
+            return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz); dims=1:prod_dims)
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz; kwargs...) 
             # println("in rrule raw")
             y = $(Symbol(F[1], :_raw))(x, sz; kwargs...) # to assign the function to a symbol
             function mypullback(dy)
-                mydx =  dy .* $(F[6])(y, x, sz; kwargs...)
+                mydx =  conj.(dy) .* $(F[6])(y, x, sz; kwargs...)
                 return NoTangent(), mydx, NoTangent()
             end
             return y, mypullback
@@ -103,13 +103,13 @@ for F in generate_functions_expr()
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_idx_gradient")
             # return dot(dy, $(F[6]).(y, x, sz, args...)) # includes all dimensions!
-            return mapreduce(*, +, dy, $(F[6]).(y, x, sz, args...), dims=1:prod_dims)
+            return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz, args...), dims=1:prod_dims)
         end
 
         @eval function get_arg_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_arg_gradient")
             # return dot(dy, $(F[7]).(y, x, sz, args...))  # includes all dimensions!
-            return mapreduce(*, +, dy, $(F[7]).(y, x, sz, args...), dims=1:prod_dims) 
+            return mapreduce(*, +, conj.(dy), $(F[7]).(y, x, sz, args...), dims=1:prod_dims) 
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
@@ -175,7 +175,15 @@ for F in generate_functions_expr()
                         all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5]), get_arg_sz(sz, args...))
                     ) where {N}
         # fct = $(F[3]) # to assign the function to a symbol        
-        # @show "call2"
+        # @show "call2" 
+        # @show typeof(Array{$(F[4])})
+        # @show typeof($(F[4]))
+        # @show sz
+        # @show args
+        # @show asz = get_arg_sz(sz, args...)
+        ##### Zygote messes this up!:
+        # @show typeof(get_bc_mem(Array{$(F[4])}, sz, $(F[5]), asz))
+        # @show typeof(all_axes)
         return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
         # operator=$(F[5])
         # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operator
@@ -184,11 +192,15 @@ for F in generate_functions_expr()
     @eval function $(Symbol(F[1], :_vec))(::Type{TA}, sz::NTuple{N, Int}, vec;
         all_axes = nothing) where {TA, N}
         RT = real(eltype(TA))
-        intensity = (hasproperty(vec, :intensity)) ? vec.intensity : one(RT)
-        bg = (hasproperty(vec, :bg)) ? vec.bg : nothing
+        intensity = (hasproperty(vec, :intensity)) ? get_vec_dim(vec.intensity, 1, sz) : one(RT)
+        bg = (hasproperty(vec, :bg)) ? get_vec_dim(vec.bg, 1, sz) : nothing
+
         off = (hasproperty(vec, :off)) ? vec.off : nothing
         sca = (hasproperty(vec, :sca)) ? vec.sca : nothing
-        args = (hasproperty(vec, :args)) ? (vec.args,) : Tuple([])
+        args = (hasproperty(vec, :args)) ? (vec.args,) : ()
+        if any(isa.(args, Tuple))
+            error("use vectors rather than tuples in component arrays, since Zygote has trouble with tuples.")
+        end
         all_axes = isnothing(all_axes) ? get_bc_mem(similar_arr_type(TA, $(F[4]), Val(N)), sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;
         return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(TA, sz, off, sca, args...; all_axes=all_axes))
     end

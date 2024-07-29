@@ -8,23 +8,31 @@ However, if this is a higher-dimensional array, the dimension dim is selected an
 Parameters:
 - `vec`: the vector or array to be accessed
 - `dim`: the dimension to be accessed
-- `tsz`: the size of the reference array (e.g. the data in the fit).
-         This is needed to reshape the result to the correct size.
+- `tsz`: the size tuple of the reference array (just the array size without the replications!).
+         This is needed to reshape / reorient the result to the correct size.
 """
-function get_vec_dim(vec::AbstractVector{T}, dim, tsz) where {T}
-    # the collect is for CUDA allowscalar
-    dim = length(vec) > 1 ? dim : 1
-    # to keep CuArrays on the device
-    return vec[dim:dim]
-end
+# function get_vec_dim(vec::AbstractVector{T}, dim, tsz) where {T}
+#     # the collect is for CUDA allowscalar
+#     dim = length(vec) > 1 ? dim : 1
+#     # to keep CuArrays on the device
+#     return @view vec[dim:dim]
+# end
 
 function get_vec_dim(vec::Tuple, dim, tsz) 
     return vec[dim]
 end
 
+"""
+    get_vec_dim(arr::AbstractArray{T, N}, dim, tsz) where {T, N}
+
+this version assumes that the argument vector `arr` describes the dimensions
+beyond the dimensions of the reference array as described by the size tuple `tsz`.
+"""
 function get_vec_dim(arr::AbstractArray{T, N}, dim, tsz) where {T, N}
+    dim = size(arr,1) > 1 ? dim : 1
     nsz = ntuple((d)-> (d<=length(tsz)) ? 1 : size(arr, d-length(tsz)+1), Val(length(tsz)+N-1))
-    return reshape(selectdim(arr,1,dim), nsz)
+    # returned is just a (reoriented) view:
+    return reshape(selectdim(arr, 1, dim), nsz)
 end
 
 function get_vec_dim(num::Number, dim, tsz) 
@@ -42,10 +50,19 @@ end
 #     return sum.(val)
 # end
 function optional_convert(ref_arg::AbstractArray{T,N}, val) where {T,N}
+    if (prod(size(ref_arg)) == 1)
+        return sum(sum.(val))
+    end
     res = similar(ref_arg)
     d=1
     for v in val
-        selectdim(res, 1, d) .= v[:]
+        dim = size(ref_arg, 1) > 1 ? d : 1
+        dv = selectdim(res, 1, dim)
+        if (prod(size(dv)) == 1)
+            dv .= sum(v[:])
+        else
+            dv[:] .= v[:]
+        end
         d += 1
     end
     return res
@@ -56,14 +73,23 @@ function optional_convert(ref_arg::NTuple, val::NTuple)
 end
 
 function optional_convert(ref_arg::Number, val::NTuple)
-    return sum(val)
+    return sum(sum.(val))
 end
 
 # Versions that assign in place
 function optional_convert_assign!(dst, ref_arg::AbstractArray{T,N}, val) where {T,N}
+    if (prod(size(ref_arg)) == 1)
+        dst .= sum(sum.(val))
+        return
+    end
     d=1
     for v in val
-        selectdim(dst, 1, d) .= v[:]
+        dv = selectdim(dst, 1, d)
+        if (prod(size(dv)) == 1)
+            dv .= sum(v[:])
+        else
+            dv[:] .= v[:]
+        end
         d += 1
     end
 end
@@ -73,7 +99,7 @@ function optional_convert_assign!(dst, ref_arg::NTuple, val::NTuple)
 end
 
 function optional_convert_assign!(dst, ref_arg::Number, val::NTuple)
-    dst .= sum(val)
+    dst = sum(val)
 end
 
 
@@ -113,7 +139,7 @@ function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N
 end
 
 """
-    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
+    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=(1,)) where {AT, N}
 
 allocates a contigous memory block for the separable functions and wraps it into an instantiate broadcast (bc) structure including the bc-`operator`.
 This structure is also returned by functions like `gaussian_sep` and can  be reused by supplying it via the

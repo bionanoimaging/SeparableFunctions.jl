@@ -38,6 +38,7 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
                                 args...; 
                                 all_axes = get_sep_mem(AT, sz, get_arg_sz(sz, offset, scale, args...)),
                                 kwargs...) where {AT, N}
+
     RT = real(float(eltype(AT)))
     RAT = similar_arr_type(AT, RT, Val(1))
     offset = isnothing(offset) ? (sz.÷2 .+1 ) : RT.(offset)
@@ -267,7 +268,14 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     operator = *, all_axes = get_bc_mem(AT, sz, operator, get_arg_sz(sz, args...)),
     defaults = nothing, kwargs...) where {AT, N}
 
-    # println("in rrule broadcast")
+    # @show typeof(all_axes)
+    # @show typeof(get_bc_mem(AT, sz, operator, get_arg_sz(sz, args...)))
+    ## This is due to some strange Zygot BUG! It somehow instatiates the all_axes as an array.
+    if isa(all_axes, AbstractArray)
+        all_axes = get_bc_mem(AT, sz, operator, get_arg_sz(sz, args...))
+    end
+    # @show isa(all_axes, AbstractArray)
+
     # y = calculate_broadcasted_nokw(AT, fct, sz, args..., kwargs...)
     y_sep, calculate_sep_nokw_pullback = rrule_via_ad(config, calculate_separables_nokw_hook, AT, fct, sz, args...; operator = operator, all_axes=all_axes.args, kwargs...)
     # println("y done")
@@ -278,14 +286,11 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     # @show size(y)
 
     function calculate_broadcasted_nokw_pullback(dy)
-        # println("in debug_dummy") # sz is (10, 20)
-        # @show size(dy)
-        projected = ntuple((d) -> begin
+        # println("in calculate_broadcasted_nokw_pullback") # sz is (10, 20)
+        projected = (N<=1) ? ntuple((d) -> dy, Val(N)) : ntuple((d) -> begin
             dims=((1:d-1)...,(d+1:N)...)
             reduce(+, operator.(y_sep[[dims...]]...) .* dy, dims=dims)
             end, Val(N)) # 7 Mb
-        # @show typeof(projected[1])
-        # @show size(projected[1])
         # @show typeof(projected[2])
         myres = calculate_sep_nokw_pullback(projected) # 8 kB
         return myres
@@ -299,28 +304,52 @@ end
 # Needs revision
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(calculate_separables_nokw_hook), ::Type{AT}, fct, sz::NTuple{N, Int}, args...;
     all_axes = get_sep_mem(AT, sz, get_arg_sz(sz, args...)), kwargs...) where {AT, N}
+    # @show "in rrule sep hook"
     # ids = ntuple((d) -> reorient(get_1d_ids(d, sz, args[1], args[2]), d, Val(N)), Val(N)) # offset==args[1] and scale==args[2]
-    ids = ntuple((d) -> get_1d_ids(d, sz, args[1], args[2]), Val(N)) # offset==args[1] and scale==args[2]
-    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(args[1]), one(eltype(AT)))
+    RT = real(float(eltype(AT)))
+    RAT = similar_arr_type(AT, RT, Val(1))
+    off = isnothing(args[1]) ? (sz.÷2 .+1 ) : RT.(args[1])
+    sca = isnothing(args[2]) ? RAT([one(RT)]) : RT.(args[2])
 
+    ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(N)) # offset==args[1] and scale==args[2]
+    ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(off)) # , one(eltype(AT))
+
+    extra_sz = get_arg_sz(sz, args...)
+    tdims = length(sz)+length(extra_sz)
+    # @show tdims
+    # @show typeof(all_axes)
     y = calculate_separables_nokw(AT, fct, sz, args...; all_axes = all_axes, kwargs...)
 
-    args_1d = ntuple((d)-> pick_n.(d, args[3:end]), Val(N))
+    # args_1d = ntuple((d)-> pick_n.(d, args[3:end]), Val(N))
+    args_1d = ntuple((d)-> get_vec_dim.(args[3:end], d, Ref(sz)), Val(N))
 
     function calculate_separables_nokw_hook_pullback(dy)
         #get_idx_gradient(fct, length(sz), y, x, sz[d], dy[d], args...)
         #get_arg_gradient(fct, length(sz), y, x, sz[d], dy[d].*ids_offset_only[d], args...)
-        yv = ntuple((d) -> (@view y[d][:]), Val(N))
-        dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
-        doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* 
-            get_idx_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        # yv = ntuple((d) -> (@view y[d][:]), Val(N))
+        # dyv = ntuple((d) -> (@view dy[d][:]), Val(N))
+        # doffset = optional_convert(args[1], ntuple((d) -> .- pick_n(d, args[2]) .* 
+        #     get_idx_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+        doffset = isnothing(args[1]) ? nothing : optional_convert(off, 
+            ntuple((d) -> (- get_vec_dim(sca, d, sz)) .* 
+            get_idx_gradient(fct, length(sz), y[d], ids[d], sz[d], dy[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
 
-        dscale = optional_convert(args[2], ntuple((d) -> 
-            get_idx_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset        
+        # dscale = optional_convert(args[2], ntuple((d) -> 
+        #     get_idx_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d].* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset        
 
-        dargs = ntuple((argno) -> optional_convert(args[2+argno],
-            ntuple((d) -> get_arg_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)-2) # ids @ offset the -1 is since the argument of fct is idx-offset
+        dscale = isnothing(args[2]) ? nothing : optional_convert(sca, ntuple((d) -> 
+            get_idx_gradient(fct, length(sz), y[d], ids[d], sz[d], dy[d] .* ids_offset_only[d], args_1d[d]...), Val(N))) # ids @ offset the -1 is since the argument of fct is idx-offset
+            
+        # dargs = ntuple((argno) -> optional_convert(args[2+argno],
+        #     ntuple((d) -> get_arg_gradient(fct, length(sz), yv[d], ids[d], sz[d], dyv[d], args_1d[d]...), Val(N))), length(args)-2) # ids @ offset the -1 is since the argument of fct is idx-offset
+        dargs =  ntuple((argno) -> optional_convert(args[2+argno],
+            ntuple((d) -> begin
+                red_dims = (isa(args_1d[1][1], AbstractVector) || isa(args_1d[1][1], Number)) ? tdims : length(sz)
+                get_arg_gradient(fct, red_dims, y[d], ids[d], sz[d], dy[d], args_1d[d]...)
+                end, Val(N))), length(args)-2)
 
+        # @show doffset
+        # @show dargs
 
         return (NoTangent(), NoTangent(), NoTangent(), NoTangent(), doffset, dscale, dargs...)
         end
@@ -356,7 +385,7 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
         intensity = hasproperty(vec, :intensity) ? vec.intensity : RAT([one(RT)])
         off = hasproperty(vec, :off) ? vec.off : (sz.÷2 .+1)
         sca = hasproperty(vec, :sca) ? vec.sca : RAT([one(RT)])
-        args = hasproperty(vec, :args) ? (vec.args,) : Tuple([])
+        args = hasproperty(vec, :args) ? (vec.args,) : ()
         # mid = sz .÷ 2 .+ 1
         # off = off .+ mid
         ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(prod_dims)) # offset==args[1] and scale==args[2]
@@ -368,7 +397,7 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
         # if !isnothing(F) || !isnothing(G)
         #     resid .= bg .+ intensity .* by .- data
         # end
-        loss = loss_fg!(F, resid, bg .+ intensity .* by)
+        loss = loss_fg!(F, resid, bg .+ get_vec_dim(intensity, 1, sz) .* by)
         if !isnothing(G)
             # for arrays this should be .=
             G.bg = C*sum(resid)
@@ -392,17 +421,16 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
 
             # args_1d = ntuple((d)-> pick_n.(d, args), Val(prod_dims))
             args_1d = ntuple((d)-> get_vec_dim.(args, d, Ref(sz)), Val(prod_dims))
-            if hasproperty(vec, :off)                
-                G.off .= optional_convert(off, 
+            if hasproperty(vec, :off)
+                optional_convert_assign!(G.off, off, 
                     ntuple((d) -> (-C*get_vec_dim(intensity,d, sz) .* get_vec_dim(sca, d, sz)) .* 
                     get_idx_gradient(fct, length(sz), y[d], ids[d], sz[d], dy[d], args_1d[d]...), Val(prod_dims))) # ids @ offset the -1 is since the argument of fct is idx-offset
             end
 
             if hasproperty(vec, :args)
                 red_dims = (isa(args_1d[1][1], AbstractVector) || isa(args_1d[1][1], Number)) ? length(size(data)) : length(sz)
-                tg = ntuple((d) -> C * get_vec_dim(intensity, d, sz) .* get_arg_gradient(fct, red_dims, y[d], ids[d], sz[d], dy[d], args_1d[d]...), Val(prod_dims))
-                dargs = ntuple((argno) -> optional_convert(args[argno], tg), length(args)) # ids @ offset the -1 is since the argument of fct is idx-offset
-                G.args .= dargs[1]
+                tg = ntuple((d) -> C .* get_vec_dim(intensity, d, sz) .* get_arg_gradient(fct, red_dims, y[d], ids[d], sz[d], dy[d], args_1d[d]...), Val(prod_dims))
+                optional_convert_assign!(G.args, args[1], tg)
             end
             # dargs = (0f0,0f0)
 
@@ -411,7 +439,7 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
                 for d = 1:prod_dims
                     dy[d] .= dy[d].* ids_offset_only[d]
                 end
-                G.sca .= optional_convert(sca, ntuple((d) -> 
+                optional_convert_assign!(G.sca, sca, ntuple((d) -> 
                 C * get_vec_dim(intensity, d, sz) .* get_idx_gradient(fct, length(sz), y[d], ids[d], sz[d], dy[d], args_1d[d]...), Val(prod_dims))) # ids @ offset the -1 is since the argument of fct is idx-offset
             end
                 # 1.5 kB:
@@ -424,8 +452,16 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
 
         if !isnothing(G) # forward needs to be calculated
             # resid .*= by # is slower!
-            resid .= resid .* by
-            G.intensity = C*sum(resid)
+            resid .= conj.(by) .* resid
+            # optional_convert_assign!(G.intensity, G.intensity, (sum(resid, dims=1:length(sz)),))
+
+            if (prod(size(G.intensity)) > 1)
+                G.intensity[:] .= C .* @view sum(resid, dims=1:length(sz))[:]
+            else
+                G.intensity = C .* sum(resid, dims=1:length(sz))[1]
+            end
+            # G.intensity[:] .= C .* sum(resid .* by, dims=1:length(sz))[:]
+            # end
             # G.intensity = 2*sum(resid.*by)
         end
 

@@ -9,11 +9,14 @@ using CUDA
 sz = (7,7) # (1600, 1600)
 many_fits = true
 use_cuda = true
-hyperplanes = many_fits ? rand(Float32, (1,10000)) : 0
+N = 10_000
+hyperplanes = many_fits ? rand(Float32, (1, N)) : 0
 
 off = [3.2f0, 3.5f0].+hyperplanes
 sigma = [1.4f0, 1.1f0]
-vec_true = ComponentVector(;bg=10.0f0, intensity=50f0, off = off, args = sigma)
+hyperplanes = many_fits ? rand(Float32, (1, N)) : 0
+intensity = [50f0] .* (1 .+ hyperplanes)
+vec_true = ComponentVector(;bg=10.0f0, intensity=intensity, off = off, args = sigma)
 
 pdat = gaussian_vec(sz, vec_true)
 dat = Float32.(poisson(Float64.(pdat)))
@@ -26,21 +29,23 @@ myfg! = get_fg!(pdat, gaussian_raw, length(sz); loss=loss_anscombe_pos, bg=7f0);
 shyperplanes = many_fits ? zeros(Float32, (1, size(dat)[end])) : 0
 soff = [4.0f0, 4.0f0] .+ shyperplanes
 bg = 0.5f0
-intensity = 45f0
+intensity = [45f0] .+ shyperplanes
 sigma = [3.0f0, 2.0f0]
 if (use_cuda)
     bg = CuArray([bg])
-    intensity = CuArray([intensity])
+    intensity = CuArray(intensity)
     soff = CuArray(soff)
     sigma = CuArray(sigma)
 end
 startvals = ComponentVector(;bg=bg, intensity=intensity, off = soff, args = sigma)
-opt = Optim.Options(iterations = 99); #
+opt = Optim.Options(iterations = 499); #
 odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals);
 
 # and perform the fit
-@time CUDA.@sync reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
-# 2 sec, 5k fits/s
+@time reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
+# 2 sec, 5k fits/s (44.25 k allocations: 1.546 GiB, 7.35% gc time)
+# with intensity variations: 26.833106 seconds (532.47 k allocations: 20.251 GiB, 5.99% gc time)
+# in Cuda: 
 reso.f_calls # 61
 reso.minimum 
 @vt pdat dat gaussian_vec(sz, startvals) gaussian_vec(sz, reso.minimizer)
@@ -49,6 +54,7 @@ odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals);
 if isa(dat, CuArray)
     @time CUDA.@sync reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
     @btime CUDA.@sync reso = Optim.optimize($odo, $startvals, Optim.LBFGS(), $opt);
+    # with intensity variations:  7.634 s (11810218 allocations: 289.64 MiB)
 else
     @btime reso = Optim.optimize($odo, $startvals, Optim.LBFGS(), $opt);
 end

@@ -4,6 +4,7 @@ using SeparableFunctions
 using FiniteDifferences
 using Zygote
 using Random
+using ComponentArrays
 
 function test_fct(T, fcts, sz, args...; kwargs...)
     ifa, fct = fcts
@@ -175,10 +176,11 @@ function test_gradient(T, fct, sz, args...; kwargs...)
     off0 = rand(RT, length(sz))
     sca0 = rand(RT, length(sz))
     args = ntuple((d)->RT.(args[d]), length(args))
-    loss = (off, sca, args...) -> sum(abs2.(fct.(sz, off, sca, args..., kwargs...) .- dat))
+    loss = (off, sca, args...) -> sum(abs2.(fct(sz, off, sca, args..., kwargs...) .- dat))
     # @show loss(off0, sca0, args...)
     g = gradient(loss, off0, sca0, args...)
     gn = grad(central_fdm(5, 1), loss, off0, sca0, args...) # 5th order method, 1st derivative
+
     for r in 1:length(gn)
         @test eltype(g[r]) == RT
         # @show g[r]
@@ -191,7 +193,7 @@ end
     rng = collect(1:0.1:2)
     sz = length(rng)
 
-    loss = (x, sigma) -> sum(gaussian_raw(x, sz, sigma))
+    loss = (x, sigma) -> sum(gaussian_raw.(x, sz, sigma))
     sigma0 = 2.0
     loss(rng, sigma0)
     g = gradient(loss, rng, sigma0)
@@ -228,10 +230,45 @@ end
     off0 = (0.9, 1.2, 0.4)
     loss2(off0, sca0, sigma0)
     g = gradient(loss2, off0, sca0, sigma0)
-    gn = grad(central_fdm(5, 1), loss2, off0, sca0, sigma0) # 5th order method, 1st derivative
+    gn = grad(central_fdm(5, 1), loss2, off0, sca0, sigma0) # 5th order method, 1st derivative    
+
     @test all(isapprox.(g[1], gn[1], atol=5e-3))
     @test all(isapprox.(g[2], gn[2], atol=1e-2))
 
+    # now the vec version with intensity, scale, offset and bg (just a single replica):
+    for use_hyper_dims in (true, false)
+        N_hyper = 4
+        hyperint = (use_hyper_dims) ? 5.0 .+ rand(1,1,N_hyper) : 1
+        hyperoff = (use_hyper_dims) ? 1 .+ 0.2 .* rand(1,1,N_hyper) : 1
+        hyperarg = (use_hyper_dims) ? 1 .+ 0.2 .* rand(1,1,N_hyper) : 1
+        sz = (11, 22)
+        vec_true = ComponentVector(;bg=0.2, intensity=1.0 .*hyperint, off = [2.2, 3.3].*hyperoff, sca = [1.3, 1.2], args = [2.4, 1.5].*hyperarg)
+        dat = gaussian_vec(sz, vec_true)
+        loss2 = (vec) -> sum(abs2.(gaussian_vec(sz, vec) .- dat))
+        @test loss2(vec_true) == 0
+        g = gradient(loss2, vec_true)
+        gn = grad(central_fdm(5, 1), loss2, vec_true) # 5th order method, 1st derivatives
+        myfg! = get_fg!(dat, gaussian_raw, length(sz); loss = loss_gaussian) 
+        G = similar(gn[1])
+        f = myfg!(1, G, vec_true)
+        # maximum(abs.(G))
+        for (mygn, myg, myfg) in zip(gn[1], g[1], G)
+            @test all(isapprox.(mygn, 0, atol=5e-7))
+            @test all(isapprox.(myg, 0, atol=5e-7))
+            @test all(isapprox.(myfg, 0, atol=5e-7))
+        end
+
+        # vec_start = ComponentVector(;bg=0.3, intensity=1.1, off = [2.3, 3.4], sca = [1.4, 1.3], args = [2.5, 1.6])
+        vec_start = vec_true .+ 0.2
+        g = gradient(loss2, vec_start)
+        gn = grad(central_fdm(5, 1), loss2, vec_start) # 5th order method, 1st derivatives
+        f = myfg!(1, G, vec_start)
+        # maximum(abs.(G[:] .- gn[1][:]))
+        for (mygn, myg, myfg) in zip(gn[1], g[1], G)
+            @test all(isapprox.(mygn, myg, atol=4e-2))
+            @test all(isapprox.(mygn, myfg, atol=4e-2))
+        end
+    end
 end
 
 return
