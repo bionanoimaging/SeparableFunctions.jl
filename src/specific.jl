@@ -81,9 +81,10 @@ for F in generate_functions_expr()
 
     if (length(F) == 6) # a gradient definition was provided explicitely
         # @show "creating rrule for $(Symbol(F[1], :_raw)) 
-        @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), y, x, sz, dy)
+        @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy)
             # println("in set_idx_gradient")
-            return dot(dy, $(F[6]).(y, x, sz))
+            # return dot(dy, $(F[6]).(y, x, sz))
+            return mapreduce(*, +, $(F[6]).(y, x, sz),; dims=1:prod_dims)
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz; kwargs...) 
@@ -99,14 +100,16 @@ for F in generate_functions_expr()
     end
     if (length(F) == 7) # a gradient definition was provided explicitely
         # @show "creating rrule for $(Symbol(F[1], :_raw)) "
-        @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), y, x, sz, dy, args...)
+        @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_idx_gradient")
-            return dot(dy, $(F[6]).(y, x, sz, args...))
+            # return dot(dy, $(F[6]).(y, x, sz, args...)) # includes all dimensions!
+            return mapreduce(*, +, dy, $(F[6]).(y, x, sz, args...), dims=1:prod_dims)
         end
 
-        @eval function get_arg_gradient(::typeof($(Symbol(F[1], :_raw))), y, x, sz, dy, args...)
+        @eval function get_arg_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_arg_gradient")
-            return dot(dy, $(F[7]).(y, x, sz, args...)) 
+            # return dot(dy, $(F[7]).(y, x, sz, args...))  # includes all dimensions!
+            return mapreduce(*, +, dy, $(F[7]).(y, x, sz, args...), dims=1:prod_dims) 
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
@@ -157,18 +160,19 @@ for F in generate_functions_expr()
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
-                        all_axes = get_bc_mem(TA, sz, $(F[5]))
+                        all_axes = get_bc_mem(TA, sz, $(F[5]), get_arg_sz(sz, args...))
                     ) where {TA, N}
         # fct = $(F[3]) # to assign the function to a symbol
 
         # @show "call"
-        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
+        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]),
+            all_axes=all_axes)
         # operator=$(F[5])
         # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operator
     end
 
     @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
-                        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5]))
+                        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5]), get_arg_sz(sz, args...))
                     ) where {N}
         # fct = $(F[3]) # to assign the function to a symbol        
         # @show "call2"
@@ -178,19 +182,30 @@ for F in generate_functions_expr()
     end
 
     @eval function $(Symbol(F[1], :_vec))(::Type{TA}, sz::NTuple{N, Int}, vec;
-        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5])) ) where {TA, N}
+        all_axes = nothing) where {TA, N}
         RT = real(eltype(TA))
         intensity = (hasproperty(vec, :intensity)) ? vec.intensity : one(RT)
-        bg = (hasproperty(vec, :bg)) ? vec.bg : zero(RT)
-        off = (hasproperty(vec, :off)) ? vec.off : sz .÷ 2 .+ 1
-        sca = (hasproperty(vec, :sca)) ? vec.sca : ones(RT, length(sz))
+        bg = (hasproperty(vec, :bg)) ? vec.bg : nothing
+        off = (hasproperty(vec, :off)) ? vec.off : nothing
+        sca = (hasproperty(vec, :sca)) ? vec.sca : nothing
         args = (hasproperty(vec, :args)) ? (vec.args,) : Tuple([])
-        return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(sz, off, sca, args...; all_axes=all_axes))
+        all_axes = isnothing(all_axes) ? get_bc_mem(similar_arr_type(TA, $(F[4]), Val(N)), sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;
+        return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(TA, sz, off, sca, args...; all_axes=all_axes))
     end
 
     @eval function $(Symbol(F[1], :_vec))(sz::NTuple{N, Int}, vec;
-        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5])) ) where {N}
-        return $(Symbol(F[1], :_vec))(Array{$(F[4])}, sz, vec; all_axes=all_axes)        
+        all_axes = nothing) where {N}
+        TA = Array{$(F[4])}
+        if hasproperty(vec, :off) && isa(vec.off, AbstractArray)
+            TA = similar_arr_type(typeof(vec.off), $(F[4]), Val(N))
+        elseif hasproperty(vec, :intensity) && isa(vec.intensity, AbstractArray)
+            TA = similar_arr_type(typeof(vec.intensity), $(F[4]), Val(N))
+        elseif hasproperty(vec, :sca) && isa(vec.sca, AbstractArray)
+            TA = similar_arr_type(typeof(vec.sca), $(F[4]), Val(N))
+        elseif hasproperty(vec, :args) && isa(vec.args, AbstractArray)
+            TA = similar_arr_type(typeof(vec.args[1]), $(F[4]), Val(N))
+        end
+        return $(Symbol(F[1], :_vec))(TA, sz, vec; all_axes=all_axes)        
     end
 
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}

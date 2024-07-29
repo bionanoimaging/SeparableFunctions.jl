@@ -1,5 +1,4 @@
 using SeparableFunctions
-using IndexFunArrays
 using BenchmarkTools
 using ComponentArrays
 using Optim
@@ -8,6 +7,7 @@ using Random
 sz = (64, 64)
 sigma = (2.2, 3.3)
 
+using IndexFunArrays
 # Create some functions by hand
 # the first arguments are always r: (evaluation position) and sz: (size)
 fct = (xyz, sz, sigma)-> exp(-xyz^2/sqrt(2))

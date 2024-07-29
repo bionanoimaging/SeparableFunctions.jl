@@ -1,4 +1,132 @@
 """
+    get_vec_dim(vec::AbstractVector{T}, dim, tsz) where {T}
+
+retrieves the coefficients of an argument corresponding to dimension dim.
+If this is a vector of numbers or a vector of vectors, the simple index access is returned.
+However, if this is a higher-dimensional array, the dimension dim is selected and reshaped to the size of the result.
+
+Parameters:
+- `vec`: the vector or array to be accessed
+- `dim`: the dimension to be accessed
+- `tsz`: the size of the reference array (e.g. the data in the fit).
+         This is needed to reshape the result to the correct size.
+"""
+function get_vec_dim(vec::AbstractVector{T}, dim, tsz) where {T}
+    # the collect is for CUDA allowscalar
+    dim = length(vec) > 1 ? dim : 1
+    # to keep CuArrays on the device
+    return vec[dim:dim]
+end
+
+function get_vec_dim(vec::Tuple, dim, tsz) 
+    return vec[dim]
+end
+
+function get_vec_dim(arr::AbstractArray{T, N}, dim, tsz) where {T, N}
+    nsz = ntuple((d)-> (d<=length(tsz)) ? 1 : size(arr, d-length(tsz)+1), Val(length(tsz)+N-1))
+    return reshape(selectdim(arr,1,dim), nsz)
+end
+
+function get_vec_dim(num::Number, dim, tsz) 
+    return num
+end
+
+# since this is also called with empty arguments, we need to handle this case:
+function get_vec_dim(num::Nothing, dim, tsz) 
+    return []
+end
+
+# to make the code run with Tuples and Vectors alike
+# This conversion undoes the get_vec_dim operation
+# function optional_convert(ref_arg::AbstractVector{T}, val) where {T}
+#     return sum.(val)
+# end
+function optional_convert(ref_arg::AbstractArray{T,N}, val) where {T,N}
+    res = similar(ref_arg)
+    d=1
+    for v in val
+        selectdim(res, 1, d) .= v[:]
+        d += 1
+    end
+    return res
+end
+
+function optional_convert(ref_arg::NTuple, val::NTuple)
+    return sum.(val)
+end
+
+function optional_convert(ref_arg::Number, val::NTuple)
+    return sum(val)
+end
+
+# Versions that assign in place
+function optional_convert_assign!(dst, ref_arg::AbstractArray{T,N}, val) where {T,N}
+    d=1
+    for v in val
+        selectdim(dst, 1, d) .= v[:]
+        d += 1
+    end
+end
+
+function optional_convert_assign!(dst, ref_arg::NTuple, val::NTuple)
+    dst .= sum.(val)
+end
+
+function optional_convert_assign!(dst, ref_arg::Number, val::NTuple)
+    dst .= sum(val)
+end
+
+
+"""
+    get_arg_sz(sz, args...)
+
+estimates the size of the arguments.
+This is useful for the memory allocation function, which requires the extra size of the arguments.
+
+"""
+function get_arg_sz(sz, args...)
+    max(size.(get_vec_dim.(args, 1, Ref(sz)))...)[length(sz)+1:end]
+end
+
+
+"""
+    get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N}
+
+allocates a contingous memory for the separable functions. This is useful if you want to use the same memory for multiple calculations.
+It should be passed to the `calculate_separables_nokw` function via the all_axes argument.
+
+Parameters:
+- AT: Array type. Can also be a CuArray
+- `sz`: size of the separable part of the data. THis does not include the hyperplanes.
+- `hyper_sz`: specifies the size of hyperplanes to pre-allocate as outr dimensions to `sz`. If vectors such as `offset` or `scale` specify vectors oriented along any other directions.
+ These will automatically be applied differently to each such hyperplane. E.g.: offfset=[reshape([1.0,2.0,3.0],(1,1,3)),reshape([-1.0,1.0,-2.0],(1,1,3))]
+ for a 2D sz=(512,512) and 3 hyperplanes.
+"""
+function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N}
+    hyperplanes = prod(hyper_sz)
+    all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, hyperplanes*sum(sz))
+    D = length(sz)+ length(hyper_sz)
+    dsizes = ntuple((d) -> ntuple((d2)-> (d2 <= N) ? ifelse(d2==d, sz[d], 1) : hyper_sz[d2-N], Val(D)), Val(N))
+    res = ntuple((d) -> reshape((@view all_axes[1+hyperplanes*sum(sz[1:d])-hyperplanes*sz[d]:hyperplanes*sum(sz[1:d])]), dsizes[d]), Val(N)) # Vector{AT}()
+    # res = ntuple((d) -> reorient((@view all_axes[1+hyperplanes*sum(sz[1:d])-hyperplanes*sz[d]:hyperplanes*sum(sz[1:d])]), Val(d), Val(N)), Val(N)) # Vector{AT}()
+    return res
+end
+
+"""
+    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}) where {AT, N}
+
+allocates a contigous memory block for the separable functions and wraps it into an instantiate broadcast (bc) structure including the bc-`operator`.
+This structure is also returned by functions like `gaussian_sep` and can  be reused by supplying it via the
+keyword argument `all_axes`. To obtain the bc-operator for predefined functions use `get_operator(fct)` with `fct`
+being the `raw_` version of the function, e.g. `get_operator(gassian_raw)`
+"""
+function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=(1,)) where {AT, N}
+    return Broadcast.instantiate(Broadcast.broadcasted(operator, get_sep_mem(AT, sz, hyper_sz)...))
+end
+
+
+
+"""
     pick_n(n, v)
 
 picks the `n`th value of the vector v or return the scalar v.
@@ -25,11 +153,13 @@ julia> collect(SeparableFunctions.arg_n(2, args))
  5
  ```
 """
-function arg_n(n, args, T::Type)
-    return ntuple((p)->T(pick_n(n, args[p])), length(args))
+function arg_n(n, args, T::Type, sz)
+    return ntuple((p)->T.(get_vec_dim(args[p], n, sz)), length(args))
+    # return ntuple((p)->T(pick_n(n, args[p])), length(args))
 end
-function arg_n(n, args)
-    return ntuple((p) -> pick_n(n, args[p]), length(args))
+function arg_n(n, args, sz)
+    return ntuple((p) -> get_vec_dim(args[p], n, sz), length(args))
+    # return ntuple((p) -> pick_n(n, args[p]), length(args))
 end
 
 # function crunch_args(args)

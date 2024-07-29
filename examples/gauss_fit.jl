@@ -6,27 +6,48 @@ using Noise
 using CUDA
 
 # simulate a gaussian blob with Poisson noise and fit it with a Gaussian function
-sz = (1600, 1600)
-vec_true = ComponentVector(;bg=10.0f0, intensity=50f0, off = [8.2f0, 6.5f0], args = [2.4f0, 1.5f0])
+sz = (7,7) # (1600, 1600)
+many_fits = true
+use_cuda = true
+hyperplanes = many_fits ? rand(Float32, (1,10000)) : 0
 
-dat = Float32.(poisson(Float64.(gaussian_vec(sz, vec_true))))
+off = [3.2f0, 3.5f0].+hyperplanes
+sigma = [1.4f0, 1.1f0]
+vec_true = ComponentVector(;bg=10.0f0, intensity=50f0, off = off, args = sigma)
 
-# dat = CuArray(dat)
+pdat = gaussian_vec(sz, vec_true)
+dat = Float32.(poisson(Float64.(pdat)))
+
+pdat = (use_cuda) ? CuArray(pdat) : pdat
+dat = (use_cuda) ? CuArray(dat) : dat
+
 # now prepare the fitting:
-myfg! = get_fg!(dat, gaussian_raw, loss=loss_anscombe_pos, bg=7f0);
-startvals = ComponentVector(;bg=0.5f0, intensity=45f0, off = [9f0, 7f0], args = [3.0f0, 2.0f0])
-
-opt = Optim.Options(iterations = 19); #
+myfg! = get_fg!(pdat, gaussian_raw, length(sz); loss=loss_anscombe_pos, bg=7f0);
+shyperplanes = many_fits ? zeros(Float32, (1, size(dat)[end])) : 0
+soff = [4.0f0, 4.0f0] .+ shyperplanes
+bg = 0.5f0
+intensity = 45f0
+sigma = [3.0f0, 2.0f0]
+if (use_cuda)
+    bg = CuArray([bg])
+    intensity = CuArray([intensity])
+    soff = CuArray(soff)
+    sigma = CuArray(sigma)
+end
+startvals = ComponentVector(;bg=bg, intensity=intensity, off = soff, args = sigma)
+opt = Optim.Options(iterations = 99); #
 odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals);
 
 # and perform the fit
-@time reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
+@time CUDA.@sync reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
+# 2 sec, 5k fits/s
 reso.f_calls # 61
 reso.minimum 
-@vt dat gaussian_vec(sz, startvals) gaussian_vec(sz, reso.minimizer)
+@vt pdat dat gaussian_vec(sz, startvals) gaussian_vec(sz, reso.minimizer)
 
 odo = OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!), startvals);
 if isa(dat, CuArray)
+    @time CUDA.@sync reso = Optim.optimize(odo, startvals, Optim.LBFGS(), opt);
     @btime CUDA.@sync reso = Optim.optimize($odo, $startvals, Optim.LBFGS(), $opt);
 else
     @btime reso = Optim.optimize($odo, $startvals, Optim.LBFGS(), $opt);

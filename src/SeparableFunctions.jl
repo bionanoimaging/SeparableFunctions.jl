@@ -46,12 +46,14 @@ export radial_speedup, radial_speedup_ifa
 export kwargs_to_args
 
 export loss_anscombe, loss_anscombe_pos, loss_gaussian, loss_poisson, loss_poisson_pos 
+export get_vec_dim
 
 DefaultResElType = Float32
 DefaultArrType = Array{DefaultResElType}
 DefaultComplexArrType = Array{complex(DefaultResElType)}
 
 include("utilities.jl")
+include("losses.jl")
 include("specific.jl")
 include("general.jl")
 include("radial.jl")
