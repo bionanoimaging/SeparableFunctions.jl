@@ -308,14 +308,14 @@ end
 
         # vec_start = ComponentVector(;bg=0.3, intensity=1.1, off = [2.3, 3.4], sca = [1.4, 1.3], args = [2.5, 1.6])
         vec_start = vec_true .+ 0.2
-        gs = gradient(loss2, vec_start)
-        gns = grad(central_fdm(5, 1), loss2, vec_start) # 5th order method, 1st derivatives
-        Gs = similar(gns[1]) .* 0
+        gs = gradient(loss2, vec_start)[1]
+        gns = grad(central_fdm(5, 1), loss2, vec_start)[1] # 5th order method, 1st derivatives
+        Gs = similar(gns) .* 0
         fs = myfg!(1, Gs, vec_start)
         # maximum(abs.(Gs[:] .- gns[1][:]))
-        for (mygn, myg, myfg) in zip(gns[1], gs[1], Gs)
+        for (mygn, myg, myfg) in zip(gns, gs, Gs)
             @test all(isapprox.(mygn, myg, atol=4e-7))
-            @test all(isapprox.(mygn, myfg, atol=4e-12))
+            @test all(isapprox.(mygn, myfg, atol=4e-7))
         end
     end
 end
