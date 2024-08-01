@@ -19,6 +19,8 @@
 # end
 using ChainRulesCore
 
+export mem_fct, raw_fct
+
 function generate_functions_expr()
     # offset and scale is already wrapped in the generator function
     # x_expr = :(scale .* (x .- offset))
@@ -83,7 +85,6 @@ for F in generate_functions_expr()
         # @show "creating rrule for $(Symbol(F[1], :_raw)) 
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy)
             # println("in set_idx_gradient")
-            # return dot(dy, $(F[6]).(y, x, sz))
             return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz); dims=1:prod_dims)
         end
 
@@ -102,18 +103,16 @@ for F in generate_functions_expr()
         # @show "creating rrule for $(Symbol(F[1], :_raw)) "
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_idx_gradient")
-            # return dot(dy, $(F[6]).(y, x, sz, args...)) # includes all dimensions!
-            return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz, args...), dims=1:prod_dims)
+                return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz, args...); dims=1:prod_dims)
         end
 
         @eval function get_arg_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_arg_gradient")
-            # return dot(dy, $(F[7]).(y, x, sz, args...))  # includes all dimensions!
             return mapreduce(*, +, conj.(dy), $(F[7]).(y, x, sz, args...), dims=1:prod_dims) 
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
-            # println("in rrule raw")
+            # println("in rrule2 raw")
             y = $(Symbol(F[1], :_raw))(x, sz, args...; kwargs...) # to assign the function to a symbol
             function mypullback(dy)
                 # println("pb")
@@ -201,21 +200,30 @@ for F in generate_functions_expr()
         if any(isa.(args, Tuple))
             error("use vectors rather than tuples in component arrays, since Zygote has trouble with tuples.")
         end
-        all_axes = isnothing(all_axes) ? get_bc_mem(similar_arr_type(TA, $(F[4]), Val(N)), sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;
+        all_axes = isnothing(all_axes) ? get_bc_mem(TA, sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;        
+        # use the return value instead of all_axes directly, since only this triggers the gradient calculation correctly
         return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(TA, sz, off, sca, args...; all_axes=all_axes))
     end
 
     @eval function $(Symbol(F[1], :_vec))(sz::NTuple{N, Int}, vec;
         all_axes = nothing) where {N}
-        TA = Array{$(F[4])}
+        T = $(F[4])
+        TA = Array{T}
         if hasproperty(vec, :off) && isa(vec.off, AbstractArray)
-            TA = similar_arr_type(typeof(vec.off), $(F[4]), Val(N))
-        elseif hasproperty(vec, :intensity) && isa(vec.intensity, AbstractArray)
-            TA = similar_arr_type(typeof(vec.intensity), $(F[4]), Val(N))
-        elseif hasproperty(vec, :sca) && isa(vec.sca, AbstractArray)
-            TA = similar_arr_type(typeof(vec.sca), $(F[4]), Val(N))
-        elseif hasproperty(vec, :args) && isa(vec.args, AbstractArray)
-            TA = similar_arr_type(typeof(vec.args[1]), $(F[4]), Val(N))
+            T = promote_type(T, eltype(vec.off))
+            TA = similar_arr_type(typeof(vec.off), T, Val(N))
+        end
+        if hasproperty(vec, :intensity) && isa(vec.intensity, AbstractArray)
+            T = promote_type(T, eltype(vec.intensity))
+            TA = similar_arr_type(typeof(vec.intensity), T, Val(N))
+        end
+        if hasproperty(vec, :sca) && isa(vec.sca, AbstractArray)
+            T = promote_type(T, eltype(vec.sca))
+            TA = similar_arr_type(typeof(vec.sca), T, Val(N))
+        end
+        if hasproperty(vec, :args) && isa(vec.args, AbstractArray)
+            T = promote_type(T, eltype(vec.args))
+            TA = similar_arr_type(typeof(vec.args), T, Val(N))
         end
         return $(Symbol(F[1], :_vec))(TA, sz, vec; all_axes=all_axes)        
     end
@@ -230,6 +238,18 @@ for F in generate_functions_expr()
         separable_view(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
+    @eval mem_fct(::typeof($(Symbol(F[1], :_col))), ::Type{AT}, sz, hyper_sz=()) where AT = get_bc_mem(AT, sz, $(F[5]), hyper_sz)
+    @eval mem_fct(::typeof($(Symbol(F[1], :_sep))), ::Type{AT}, sz, hyper_sz=()) where AT = get_bc_mem(AT, sz, $(F[5]), hyper_sz)
+    @eval mem_fct(::typeof($(Symbol(F[1], :_nokw_sep))), ::Type{AT}, sz, hyper_sz=()) where AT = get_bc_mem(AT, sz, $(F[5]), hyper_sz)
+    @eval mem_fct(::typeof($(Symbol(F[1], :_vec))), ::Type{AT}, sz, hyper_sz=()) where AT = get_bc_mem(AT, sz, $(F[5]), hyper_sz)
+    @eval mem_fct(::typeof($(Symbol(F[1], :_lz))), ::Type{AT}, sz, hyper_sz=()) where AT = get_sep_mem(AT, sz, hyper_sz)
+
+    @eval raw_fct(::typeof($(Symbol(F[1], :_raw)))) = $(Symbol(F[1], :_raw))
+    @eval raw_fct(::typeof($(Symbol(F[1], :_col)))) = $(Symbol(F[1], :_raw))
+    @eval raw_fct(::typeof($(Symbol(F[1], :_sep)))) = $(Symbol(F[1], :_raw))
+    @eval raw_fct(::typeof($(Symbol(F[1], :_nokw_sep)))) = $(Symbol(F[1], :_raw))
+    @eval raw_fct(::typeof($(Symbol(F[1], :_vec)))) = $(Symbol(F[1], :_raw))
+    @eval raw_fct(::typeof($(Symbol(F[1], :_lz)))) = $(Symbol(F[1], :_raw))
     # collected: fast separable calculation but resulting in an ND array
     @eval export $(Symbol(F[1], :_col))
     # separated: a vector of separated contributions is returned and the user has to combine them
@@ -240,7 +260,6 @@ for F in generate_functions_expr()
     @eval export $(Symbol(F[1], :_nokw_sep))
     # @eval export $(Symbol(F[1], :_lz))
 end 
-
 
 ## Here some individual versions based on copy_corners! stuff. They only exist in the _cor version as they are not separable in X and Y.
 """

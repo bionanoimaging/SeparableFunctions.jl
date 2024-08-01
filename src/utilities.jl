@@ -51,9 +51,12 @@ end
 # end
 function optional_convert(ref_arg::AbstractArray{T,N}, val) where {T,N}
     if (prod(size(ref_arg)) == 1)
-        return sum(sum.(val))
+        # return a vector of a single number since the input is also a vector of a single number
+        result = similar(ref_arg, eltype(val[1]), 1)
+        result[1] = sum(sum.(val))
+        return result
     end
-    res = similar(ref_arg)
+    res = similar(ref_arg, eltype(val[1]))
     d=1
     for v in val
         dim = size(ref_arg, 1) > 1 ? d : 1
@@ -86,9 +89,10 @@ function optional_convert_assign!(dst, ref_arg::AbstractArray{T,N}, val) where {
     for v in val
         dv = selectdim(dst, 1, d)
         if (prod(size(dv)) == 1)
-            dv .= sum(v[:])
+            # the real cast seem dodgy here
+            dv .= sum(real.(v[:]))
         else
-            dv[:] .= v[:]
+            dv[:] .= real.(v[:])
         end
         d += 1
     end
@@ -108,15 +112,18 @@ end
 
 estimates the size of the arguments.
 This is useful for the memory allocation function, which requires the extra size of the arguments.
-
+returned is a tuple of extra dimensions. This can be used directly in the memory allocation function.
 """
 function get_arg_sz(sz, args...)
     max(size.(get_vec_dim.(args, 1, Ref(sz)))...)[length(sz)+1:end]
 end
 
+function get_arg_sz(sz)
+    return ()
+end
 
 """
-    get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N}
+    get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=()) where {AT, N}
 
 allocates a contingous memory for the separable functions. This is useful if you want to use the same memory for multiple calculations.
 It should be passed to the `calculate_separables_nokw` function via the all_axes argument.
@@ -128,7 +135,7 @@ Parameters:
  These will automatically be applied differently to each such hyperplane. E.g.: offfset=[reshape([1.0,2.0,3.0],(1,1,3)),reshape([-1.0,1.0,-2.0],(1,1,3))]
  for a 2D sz=(512,512) and 3 hyperplanes.
 """
-function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N}
+function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=()) where {AT, N}
     hyperplanes = prod(hyper_sz)
     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, hyperplanes*sum(sz))
     D = length(sz)+ length(hyper_sz)
@@ -139,17 +146,20 @@ function get_sep_mem(::Type{AT}, sz::NTuple{N, Int}, hyper_sz=(1,)) where {AT, N
 end
 
 """
-    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=(1,)) where {AT, N}
+    get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=()) where {AT, N}
 
 allocates a contigous memory block for the separable functions and wraps it into an instantiate broadcast (bc) structure including the bc-`operator`.
 This structure is also returned by functions like `gaussian_sep` and can  be reused by supplying it via the
 keyword argument `all_axes`. To obtain the bc-operator for predefined functions use `get_operator(fct)` with `fct`
 being the `raw_` version of the function, e.g. `get_operator(gassian_raw)`
 """
-function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=(1,)) where {AT, N}
+function get_bc_mem(::Type{AT}, sz::NTuple{N, Int}, operator, hyper_sz=()) where {AT, N}
     return Broadcast.instantiate(Broadcast.broadcasted(operator, get_sep_mem(AT, sz, hyper_sz)...))
 end
 
+function get_mem(::Type{AT}, sz::NTuple{N, Int}, fct, hyper_sz=()) where {AT, N}
+    return mem_fct(fct, AT, sz, hyper_sz)
+end
 
 
 """
@@ -171,7 +181,7 @@ This is useful for calling separable functions with their scalar arguments diffe
 
 # Example
 ```jdoctest
-julia> args = (1,(4,5))
+julia> args = (1, (4,5))
 (1, (4, 5))
 julia> collect(SeparableFunctions.arg_n(2, args))
 2-element Vector{Int64}:
@@ -200,7 +210,7 @@ This is useful for calling separable functions with their scalar arguments diffe
 
     # Example
 ```jdoctest
-julia> kw = (a=1,b=(4,5))
+julia> kw = (a=1, b=(4,5))
 (a = 1, b = (4, 5))
 julia> SeparableFunctions.kwarg_n(2, kw)
 (a = 1, b = 5)

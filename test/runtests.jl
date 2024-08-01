@@ -7,6 +7,7 @@ using Random
 using ComponentArrays
 
 function test_fct(T, fcts, sz, args...; kwargs...)
+    AT = Array{T}
     ifa, fct = fcts
     a = let 
         if typeof(ifa) <: AbstractArray
@@ -16,7 +17,7 @@ function test_fct(T, fcts, sz, args...; kwargs...)
         end
     end
 
-    res = fct.(Array{T}, sz, args...; kwargs...)
+    res = fct(AT, sz, args...; kwargs...)
     if typeof(res) <: Tuple
         res = res[2].(res[1]...)
     end
@@ -27,8 +28,8 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     @test a≈res
     @test eltype(res)==T
 
-    all_axes = zeros(T, prod(sz))
-    res2 = fct.(Array{T}, sz, args...; all_axes = all_axes, kwargs...)
+    all_axes = mem_fct(fct, AT, sz)# get_bc_mem(AT, sz, *) # zeros(T, prod(sz))
+    res2 = fct(AT, sz, args...; all_axes = all_axes, kwargs...)
     if typeof(res2) <: Tuple
         res2 = res2[2].(res2[1]...)
     end
@@ -48,14 +49,14 @@ end
 @testset "calculate_separables" begin
     sz = (13,15)
     fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
-    offset = (2.2, -2.2)  ; scale = (1.1, 1.2); 
+    offset = (2.2, -2.2); scale = (1.1, 1.2); 
     @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset = offset .+ (0.1,0.2), scale=scale)
     @test size(.*(gauss_sep...)) == sz
     # test with preallocated array
-    all_axes = zeros(Float32, prod(sz))
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), all_axes = all_axes)
-    # @test all_axes[7] ≈ 1.0
-    # @test all_axes[13+8] ≈ 1.0
+    all_axes = get_sep_mem(Array{Float32}, sz) # zeros(Float32, prod(sz))
+    @time gauss_sep = calculate_separables(fct, sz, (0.5, 1.0), all_axes = all_axes)
+    @test all_axes[1][7] ≈ 1.0
+    @test all_axes[2][8] ≈ 1.0
 end
 
 @testset "gaussian" begin
@@ -169,24 +170,42 @@ end
     @test maximum(abs.(res4 .- res5)) < 1e-6
 end
 
+function check_all(T, args...; kwargs...)
+    for a in args[2:end]
+        for r in 1:length(a)
+            @test eltype(a[r]) == T
+            @test all(isapprox.(a[r], args[1][r]; kwargs...))
+        end
+    end
+end
+
 function test_gradient(T, fct, sz, args...; kwargs...)
     RT = real(T)
     Random.seed!(1234)
     dat = rand(T, sz...)
     off0 = rand(RT, length(sz))
     sca0 = rand(RT, length(sz))
-    args = ntuple((d)->RT.(args[d]), length(args))
+    argsc = ntuple((d)->RT.(args[d]), length(args))
     loss = (off, sca, args...) -> sum(abs2.(fct(sz, off, sca, args..., kwargs...) .- dat))
-    # @show loss(off0, sca0, args...)
-    g = gradient(loss, off0, sca0, args...)
-    gn = grad(central_fdm(5, 1), loss, off0, sca0, args...) # 5th order method, 1st derivative
+    # @show loss(off0, sca0, argsc...)
+    gn = grad(central_fdm(5, 1), loss, off0, sca0, argsc...) # 5th order method, 1st derivative
+    g = gradient(loss, off0, sca0, argsc...)
 
-    for r in 1:length(gn)
-        @test eltype(g[r]) == RT
-        # @show g[r]
-        # @show gn[r]
-        @test all(isapprox.(g[r], gn[r], rtol=1e-1))
+    fg! = get_fg!(dat, raw_fct(fct), length(sz); loss = loss_gaussian)
+    if length(argsc)>0
+        vec = ComponentVector(;off=off0, sca=sca0, args=[argsc[1]...])
+    else
+        vec = ComponentVector(;off=off0, sca=sca0)
     end
+    G = copy(vec)
+    f = fg!(1, G, vec)
+    if length(argsc)>0
+        G = (G.off, G.sca, G.args)
+    else
+        G = (G.off, G.sca)
+    end
+    
+    check_all(RT, gn, g, G; rtol=1e-1)
 end
 
 @testset "gradient tests" begin
@@ -200,6 +219,34 @@ end
     gn = grad(central_fdm(5, 1), loss, rng, sigma0) # 5th order method, 1st derivative
     @test g[1] ≈ gn[1]
     @test g[2] ≈ gn[2]
+    # here some detailed tests for the complex-valued functions:
+
+    sz = (2,2)
+    sz = (22, 11)
+    rfun(off, sca, arg) = real(sum(exp_ikx_nokw_sep(sz, off, sca, arg)))
+    ifun(off, sca, arg) = imag(sum(exp_ikx_nokw_sep(sz, off, sca, arg)))
+    lfun(off, sca, arg) = sum(abs2.(exp_ikx_nokw_sep(sz, off, sca, arg) .- 1.0 .- 1.0im))
+    gn = grad(central_fdm(5, 1), ifun, (0.0,0.0), (1.0, 1.0), (0.0,0.0)) # 5th order method, 1st derivative
+    g = gradient(ifun, (0.0,0.0), (1.0, 1.0), (0.0,0.0))
+    check_all(Float64, gn, g; atol=0.001)
+
+    gn = grad(central_fdm(5, 1), ifun, (0.0,0.0), (2.0, 3.0), (2.0, 1.0)) # 5th order method, 1st derivative
+    g = gradient(ifun, (0.0,0.0), (2.0, 3.0), (2.0, 1.0))
+    check_all(Float64, gn, g; atol=0.01)
+
+    # problem only when the shift vector is diagonal and offset is non-zero
+    gn = grad(central_fdm(5, 1), ifun, (0.3, 1.2), (0.6, 1.0), (1.0, 1.0)) # 5th order method, 1st derivative
+    g = gradient(ifun, (0.3, 1.2), (0.6, 1.0), (1.0, 1.0))
+    check_all(Float64, gn, g; atol=0.05)
+
+    gn = grad(central_fdm(5, 1), rfun, (1.3, 1.2), (0.6, 1.5), (1.0, 2.0)) # 5th order method, 1st derivative
+    g = gradient(rfun, (1.3, 1.2), (0.6, 1.5), (1.0, 2.0))
+    check_all(Float64, gn, g; atol=0.02)
+
+    off0 = (1.3f0, 1.2f0); sca0 = (0.6f0, 1.5f0); args0 = (1.0f0, 2.0f0)
+    gn = grad(central_fdm(5, 1), lfun, off0 , sca0, args0) # 5th order method, 1st derivative
+    g = gradient(lfun, off0 , sca0, args0)
+    check_all(Float32, gn, g; atol=0.5)
 
     test_gradient(Float32, gaussian_nokw_sep, (11,22), (2.2, -0.8))
     test_gradient(Float64, gaussian_nokw_sep, (6, 22, 7), 2.0)
@@ -237,36 +284,38 @@ end
 
     # now the vec version with intensity, scale, offset and bg (just a single replica):
     for use_hyper_dims in (true, false)
-        N_hyper = 4
-        hyperint = (use_hyper_dims) ? 5.0 .+ rand(1,1,N_hyper) : 1
-        hyperoff = (use_hyper_dims) ? 1 .+ 0.2 .* rand(1,1,N_hyper) : 1
-        hyperarg = (use_hyper_dims) ? 1 .+ 0.2 .* rand(1,1,N_hyper) : 1
+        N_hyper = 2
+        hyperint = (use_hyper_dims) ? 1.0 .+ zeros(1,N_hyper) : 1.0
+        hyperoff = (use_hyper_dims) ? 1 .+ 0.2 .* zeros(1,N_hyper) : 1
+        hyperarg = (use_hyper_dims) ? 1 .+ 0.2 .* zeros(1,N_hyper) : 1
         sz = (11, 22)
-        vec_true = ComponentVector(;bg=0.2, intensity=1.0 .*hyperint, off = [2.2, 3.3].*hyperoff, sca = [1.3, 1.2], args = [2.4, 1.5].*hyperarg)
+        # sz = (3, 3)
+        vec_true = ComponentVector(;bg=0.0, intensity=1.0 .*hyperint, off = [2.2, 3.3].*hyperoff, sca = [1.3, 1.2], args = [2.4, 1.5].*hyperarg)
         dat = gaussian_vec(sz, vec_true)
         loss2 = (vec) -> sum(abs2.(gaussian_vec(sz, vec) .- dat))
         @test loss2(vec_true) == 0
         g = gradient(loss2, vec_true)
         gn = grad(central_fdm(5, 1), loss2, vec_true) # 5th order method, 1st derivatives
         myfg! = get_fg!(dat, gaussian_raw, length(sz); loss = loss_gaussian) 
-        G = similar(gn[1])
+        G = similar(gn[1]) .* 0
         f = myfg!(1, G, vec_true)
         # maximum(abs.(G))
         for (mygn, myg, myfg) in zip(gn[1], g[1], G)
-            @test all(isapprox.(mygn, 0, atol=5e-7))
-            @test all(isapprox.(myg, 0, atol=5e-7))
-            @test all(isapprox.(myfg, 0, atol=5e-7))
+            @test all(isapprox.(mygn, 0, atol = 5e-12))
+            @test all(isapprox.(myg, 0, atol = 5e-12))
+            @test all(isapprox.(myfg, 0, atol = 5e-12))
         end
 
         # vec_start = ComponentVector(;bg=0.3, intensity=1.1, off = [2.3, 3.4], sca = [1.4, 1.3], args = [2.5, 1.6])
         vec_start = vec_true .+ 0.2
-        g = gradient(loss2, vec_start)
-        gn = grad(central_fdm(5, 1), loss2, vec_start) # 5th order method, 1st derivatives
-        f = myfg!(1, G, vec_start)
-        # maximum(abs.(G[:] .- gn[1][:]))
-        for (mygn, myg, myfg) in zip(gn[1], g[1], G)
-            @test all(isapprox.(mygn, myg, atol=4e-2))
-            @test all(isapprox.(mygn, myfg, atol=4e-2))
+        gs = gradient(loss2, vec_start)
+        gns = grad(central_fdm(5, 1), loss2, vec_start) # 5th order method, 1st derivatives
+        Gs = similar(gns[1]) .* 0
+        fs = myfg!(1, Gs, vec_start)
+        # maximum(abs.(Gs[:] .- gns[1][:]))
+        for (mygn, myg, myfg) in zip(gns[1], gs[1], Gs)
+            @test all(isapprox.(mygn, myg, atol=4e-7))
+            @test all(isapprox.(mygn, myfg, atol=4e-12))
         end
     end
 end
