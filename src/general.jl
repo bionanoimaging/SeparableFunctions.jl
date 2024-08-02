@@ -438,12 +438,19 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
         #     resid .= bg .+ intensity .* by .- data
         # end
         myint = get_vec_dim(intensity, 1, sz)
-        loss = loss_fg!(F, resid, bg .+ myint .* by)
+        mybg = get_vec_dim(bg, 1, sz)
+        loss = loss_fg!(F, resid, mybg .+ myint .* by)
         # @show resid
         if !isnothing(G)
             # for arrays this should be .=
             if hasproperty(vec, :bg)
-                G.bg = C*sum(resid)
+                if (prod(size(G.bg)) > 1)
+                    G.bg[:] .= C*sum(resid, dims=1:length(sz))[:]
+                elseif isa(G.bg, Number)
+                    G.bg = C*sum(resid)[1]
+                else
+                    G.bg .= C*sum(resid)[1]
+                end
             end
 
             other_dims = ntuple((d)-> (ntuple((n)->n, d-1)..., ntuple((n)->d+n, prod_dims-d)...), Val(prod_dims))
@@ -508,8 +515,10 @@ function get_fg!(data::AbstractArray{T,N}, fct, prod_dims=N; loss = loss_gaussia
 
             if (prod(size(G.intensity)) > 1)
                 G.intensity[:] .= C .* @view sum(resid, dims=1:length(sz))[:]
+            elseif isa(G.intensity, Number)
+                G.intensity = C .* sum(resid)[1]
             else
-                G.intensity = C .* sum(resid, dims=1:length(sz))[1]
+                G.intensity .= C .* sum(resid)[1]
             end
             # G.intensity[:] .= C .* sum(resid .* by, dims=1:length(sz))[:]
             # end

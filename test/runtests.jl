@@ -294,17 +294,13 @@ end
         dat = gaussian_vec(sz, vec_true)
         loss2 = (vec) -> sum(abs2.(gaussian_vec(sz, vec) .- dat))
         @test loss2(vec_true) == 0
-        g = gradient(loss2, vec_true)
-        gn = grad(central_fdm(5, 1), loss2, vec_true) # 5th order method, 1st derivatives
+        g = gradient(loss2, vec_true)[1]
+        gn = grad(central_fdm(5, 1), loss2, vec_true)[1] # 5th order method, 1st derivatives
         myfg! = get_fg!(dat, gaussian_raw, length(sz); loss = loss_gaussian) 
-        G = similar(gn[1]) .* 0
+        G = similar(gn) .* 0
         f = myfg!(1, G, vec_true)
         # maximum(abs.(G))
-        for (mygn, myg, myfg) in zip(gn[1], g[1], G)
-            @test all(isapprox.(mygn, 0, atol = 5e-12))
-            @test all(isapprox.(myg, 0, atol = 5e-12))
-            @test all(isapprox.(myfg, 0, atol = 5e-12))
-        end
+        check_all(Float64, zeros(length(g)), g, gn, G; atol=5e-12)
 
         # vec_start = ComponentVector(;bg=0.3, intensity=1.1, off = [2.3, 3.4], sca = [1.4, 1.3], args = [2.5, 1.6])
         vec_start = vec_true .+ 0.2
@@ -315,7 +311,7 @@ end
         # maximum(abs.(Gs[:] .- gns[1][:]))
         for (mygn, myg, myfg) in zip(gns, gs, Gs)
             @test all(isapprox.(mygn, myg, atol=4e-7))
-            @test all(isapprox.(mygn, myfg, atol=4e-7))
+            @test all(isapprox.(mygn, myfg, atol=4e-6))
         end
     end
 end

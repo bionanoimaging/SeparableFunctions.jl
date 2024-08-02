@@ -81,14 +81,19 @@ end
 
 # Versions that assign in place
 function optional_convert_assign!(dst, ref_arg::AbstractArray{T,N}, val) where {T,N}
-    if (prod(size(ref_arg)) == 1)
+    if isa(dst, Number)
+        dst = sum(sum.(val))
+        return
+    elseif (prod(size(ref_arg)) == 1)
         dst .= sum(sum.(val))
         return
     end
     d=1
     for v in val
         dv = selectdim(dst, 1, d)
-        if (prod(size(dv)) == 1)
+        if isa(dv, Number)
+            dv = sum(real.(v[:]))
+        elseif (prod(size(dv)) == 1)
             # the real cast seem dodgy here
             dv .= sum(real.(v[:]))
         else
