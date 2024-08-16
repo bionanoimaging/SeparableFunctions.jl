@@ -47,6 +47,7 @@ export kwargs_to_args
 
 export loss_anscombe, loss_anscombe_pos, loss_gaussian, loss_poisson, loss_poisson_pos 
 export get_vec_dim
+export gauss_start
 
 DefaultResElType = Float32
 DefaultArrType = Array{DefaultResElType}
@@ -54,6 +55,7 @@ DefaultComplexArrType = Array{complex(DefaultResElType)}
 
 include("utilities.jl")
 include("losses.jl")
+include("gauss_params.jl")
 include("specific.jl")
 include("general.jl")
 include("radial.jl")

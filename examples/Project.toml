@@ -2,6 +2,7 @@
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
 InverseModeling = "ce844058-9528-415d-a63d-06f3dd08b29f"
+LsqFit = "2fda8390-95c7-5789-9bda-21331edee243"
 Noise = "81d43f40-5267-43b7-ae1c-8b967f377efa"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 SeparableFunctions = "c8c7ead4-852c-491e-a42d-3d43bc74259e"
