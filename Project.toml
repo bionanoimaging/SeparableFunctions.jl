@@ -14,6 +14,11 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 LazyArrays = "0.22, 1, 2"
+ChainRulesCore = "1.20, 1.21, 1.23, 1.24, 1.25"
+ImageTransformations = "0.10"
+Interpolations = "0.15"
+StaticArrays = "1.9"
+LinearAlgebra = "1.11"
 NDTools = "0.7"
 julia = "1"
 
