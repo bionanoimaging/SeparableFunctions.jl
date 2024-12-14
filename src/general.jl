@@ -58,21 +58,30 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
     # args_1d = ntuple((d) -> arg_n(d, args), Val(N))
     # in_place_assing!.(all_axes, 1, fct, idcs, sz, args_1d)
     for (res, sz1d, d) in zip(all_axes, sz, 1:N)
-        off = get_vec_dim(offset, d, sz)
-        sca = get_vec_dim(scale, d, sz)
+        # off = get_vec_dim(offset, d, sz) # not needed any more since in get_1d_ids
+        # sca = get_vec_dim(scale, d, sz)
         idc = get_1d_ids(d, sz, offset, scale)
         args_d = arg_n(d, args, RT, sz) # 
         # in_place_assing!(res, 1, fct, idc, sz1d, args_d)
         # @show size(res)
-        # @show size(idc)        
         res .= fct.(idc, sz1d, args_d...) # 5 allocs, 160 bytes
     end
     return all_axes
     # return res
 end
 
+"""
+    get_1d_ids(d, sz::NTuple{N, Int}, offset, scale) where {N}
+
+returns one-dimensional indices for a given dimension `d` of an N-dimensional array.
+The indices are shifted by `offset` and scaled by `scale`, which can also be vectors 
+"""
+# for Numbers, the reorient comes last, to have it CUDA-compatible
+get_1d_ids(d, sz::NTuple{N, Int}, offset::Number, scale::Number) where {N} = (reorient(get_vec_dim(scale, d, sz) .* ((1:sz[d]) .- get_vec_dim(offset, d, sz)), d, Val(N)))
+# for abstract arrays, we first have to reorient. 
 get_1d_ids(d, sz::NTuple{N, Int}, offset, scale) where {N} = get_vec_dim(scale, d, sz) .* (reorient((1:sz[d]), d, Val(N)) .- get_vec_dim(offset, d, sz))
-get_1d_ids(d, sz::NTuple{N, Int}, offset) where {N} = (reorient((1:sz[d]), d, Val(N)) .- get_vec_dim(offset, d, sz))
+get_1d_ids(d, sz::NTuple{N, Int}, offset::Number) where {N} = (reorient((1:sz[d]) .- get_vec_dim(offset, d, sz), d, Val(N)))
+get_1d_ids(d, sz::NTuple{N, Int}, offset) where {N} = reorient(1:sz[d], d, Val(N)) .- get_vec_dim(offset, d, sz)
 # get_1d_ids(d, sz, offset, scale) = pick_n(d, scale) .* ((1:sz[d]) .- pick_n(d, offset))
 # get_1d_ids(d, sz, offset::NTuple, scale::NTuple) = scale[d] .* ((1:sz[d]) .- offset[d])
 
@@ -340,6 +349,7 @@ function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(cal
     sca = isnothing(args[2]) ? RAT([one(RT)]) : RT.(args[2])
 
     ids = ntuple((d) -> get_1d_ids(d, sz, off, sca), Val(N)) # offset==args[1] and scale==args[2]
+    # ids_offset_only = ntuple((d) -> get_1d_ids(d, sz, off), Val(N)) # offset==args[1] and scale==args[2]
     ids_offset_only = get_1d_ids.(1:N, Ref(sz), Ref(off)) # , one(eltype(AT))
 
     extra_sz = get_arg_sz(sz, args...)

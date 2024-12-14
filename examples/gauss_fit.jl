@@ -14,7 +14,8 @@ many_sig = true
 
 use_cuda = false
 DType = Float32
-N = 10_000
+# N = 10_000
+N = 1000
 hp_off = many_off ? 2 .*rand(DType, (1, N)) : 0
 hp_sig = many_sig ? zeros(DType, (1, N)) : 0
 hp_int = many_int ? 1 .+ rand(DType, (1, N)) : 1
@@ -57,7 +58,7 @@ myfg! = get_fg!(dat, gaussian_raw, length(sz); loss=loss_poisson_pos);
 #     sigma = CuArray(sigma)
 # end
 # startvals = DType.(ComponentVector(;bg=bg, intensity=intensity, off = soff, args = sigma))
-opt = Optim.Options(iterations = 1500); #
+opt = Optim.Options(iterations = 150); #
 
 if (false)
     G = copy(startvals)
@@ -86,6 +87,30 @@ reso.minimum #
 success = sum(abs.(collect(startvals.off) .- vec_true.off), dims=1) .< 0.5
 success = success .&& sum(abs.(collect(reso.minimizer.off) .- vec_true.off), dims=1) .< 0.5
 sum(.!success)
+
+# Try the same by calling optimizations in parallel (seems to work better!):
+if false
+    szz = size(dat)[end]
+    # convert the startvals into a vector of individual startvals
+    dat_a = Array(dat)
+    svv = [DType.(ComponentVector(gauss_start(dat_a[:,:,n:n], 0.2, length(sz))))  for n in 1:szz];
+    if (use_cuda)
+        svv = [ComponentVector(;bg=CuArray(svv[n].bg), intensity=CuArray(svv[n].intensity),
+            off = CuArray(svv[n].off), args = CuArray(svv[n].args)) for n in 1:szz]
+    end
+    # svb.args = svb.args .* 1.2f0
+    myfg!v = [get_fg!(dat[:,:,n:n], gaussian_raw, length(sz); loss=loss_poisson_pos) for n in 1:szz];
+
+    odov = [OnceDifferentiable(Optim.NLSolversBase.only_fg!(myfg!v[n]), svv[n]) for n in 1:szz];
+    @time resov = Optim.optimize.(odov, svv, Ref(Optim.LBFGS()), Ref(opt));
+    # seeems faster!
+    svvoff = cat([svv[n].off for n in 1:szz]..., dims=2)
+    resoff = cat([resov[n].minimizer.off for n in 1:szz]..., dims=2)
+    success = sum(abs.(collect(svvoff) .- vec_true.off), dims=1) .< 0.5
+    success = success .&& sum(abs.(collect(resoff) .- vec_true.off), dims=1) .< 0.5
+    # all worked!
+    sum(.!success)
+end
 # findfirst(.!success)
 @vt collect(dat)[:,:,.!success[:]] collect(pdat)[:,:,.!success[:]] collect(gaussian_vec(sz, startvals))[:,:,.!success[:]] collect(gaussian_vec(sz, reso.minimizer))[:,:,.!success[:]]
 

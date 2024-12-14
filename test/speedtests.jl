@@ -3,6 +3,7 @@ using IndexFunArrays
 using SeparableFunctions
 using BenchmarkTools
 using CUDA
+using PlotlyJS
 
 function speedt_test()
     sz = (256, 256, 256)
@@ -15,7 +16,7 @@ function speedt_test()
         exp(-sum(abs2.((Tuple(ci) .- offset)./sigma)))
     end
     res = get_exp.(CartesianIndices(sz), Ref(Float32(sqrt(2)).*sigma), Ref(offset));  
-    @btime get_exp.(CartesianIndices($sz), Ref($sigma)); # 47.7 ms (2 allocations, 64 Mb) , but 243 ms with offset!
+    @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(0)); # 47.7 ms (2 allocations, 64 Mb) , but 243 ms with offset!
     @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 243 ms with offset (7 allocations, 64 Mb)!
 
     res2 = similar(res);
@@ -62,7 +63,6 @@ function speedt_test()
     res3_sep = gaussian_sep(typeof(resc), sz, sigma=sigma, offset=offset); # 
     tc_res2_assign = @belapsed CUDA.@sync $resc .= $res3_sep
     
-    using PlotlyJS
     method = ["Compute In Place", "Collect Separables", "Lazy Arrays", "Collect Precomputed", "Precompute"]
     dat_no_cuda = 1000 .*[t_in_place, t_gaussian_col, t_gaussian_lz, t_res2_assign, t_gaussian_sep]
     dat_cuda = 1000 .*[tc_get_exp, tc_gaussian_col, tc_gaussian_lz, tc_res2_assign, tc_gaussian_sep]
@@ -73,7 +73,7 @@ function speedt_test()
     ], Layout(title="3D Gaussian (512x512x256)", yaxis=attr(title="Time [ms]", type="log"))) # barmode="stack", 
 
 
-    # now som speed comparison for propagator_col!
+    # now some speed comparison for propagator_col!
     sz = (1024, 1024)
     Δz = 1f0
     scale = 0.5f0 ./ (max.(sz ./ 2, 1))
