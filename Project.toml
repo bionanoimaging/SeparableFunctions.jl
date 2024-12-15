@@ -18,7 +18,7 @@ ChainRulesCore = "1.20, 1.21, 1.23, 1.24, 1.25"
 ImageTransformations = "0.10"
 Interpolations = "0.15"
 StaticArrays = "1.9"
-LinearAlgebra = "1.11"
+LinearAlgebra = "1.8, 1.9, 1.10, 1.11"
 NDTools = "0.7"
 julia = "1"
 
