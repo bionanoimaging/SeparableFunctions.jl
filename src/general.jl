@@ -63,7 +63,6 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
         idc = get_1d_ids(d, sz, offset, scale)
         args_d = arg_n(d, args, RT, sz) # 
         # in_place_assing!(res, 1, fct, idc, sz1d, args_d)
-        # @show size(res)
         res .= fct.(idc, sz1d, args_d...) # 5 allocs, 160 bytes
     end
     return all_axes
@@ -76,8 +75,9 @@ end
 returns one-dimensional indices for a given dimension `d` of an N-dimensional array.
 The indices are shifted by `offset` and scaled by `scale`, which can also be vectors 
 """
-# for Numbers, the reorient comes last, to have it CUDA-compatible
-get_1d_ids(d, sz::NTuple{N, Int}, offset::Number, scale::Number) where {N} = (reorient(get_vec_dim(scale, d, sz) .* ((1:sz[d]) .- get_vec_dim(offset, d, sz)), d, Val(N)))
+# for Numbers or Vectors, the reorient comes last, to have it CUDA-compatible
+NumVecTup = Union{Number, Vector, NTuple}
+get_1d_ids(d, sz::NTuple{N, Int}, offset::NumVecTup, scale::NumVecTup) where {N} = (reorient(get_vec_dim(scale, d, sz) .* ((1:sz[d]) .- get_vec_dim(offset, d, sz)), d, Val(N)))
 # for abstract arrays, we first have to reorient. 
 get_1d_ids(d, sz::NTuple{N, Int}, offset, scale) where {N} = get_vec_dim(scale, d, sz) .* (reorient((1:sz[d]), d, Val(N)) .- get_vec_dim(offset, d, sz))
 get_1d_ids(d, sz::NTuple{N, Int}, offset::Number) where {N} = (reorient((1:sz[d]) .- get_vec_dim(offset, d, sz), d, Val(N)))
