@@ -1,7 +1,7 @@
 name = "SeparableFunctions"
 uuid = "c8c7ead4-852c-491e-a42d-3d43bc74259e"
 authors = ["RainerHeintzmann <heintzmann@gmail.com>"]
-version = "0.3"
+version = "0.4"
 
 [deps]
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
@@ -14,12 +14,12 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 LazyArrays = "0.22, 1, 2"
-ChainRulesCore = "1.20, 1.21, 1.23, 1.24, 1.25"
+ChainRulesCore = "1"
 ImageTransformations = "0.10"
-Interpolations = "0.15"
+Interpolations = "0.15, 0.16"
 StaticArrays = "1.9"
 LinearAlgebra = "1.8, 1.9, 1.10, 1.11"
-NDTools = "0.7"
+NDTools = "0.7, 0.8"
 julia = "1"
 
 [extras]
