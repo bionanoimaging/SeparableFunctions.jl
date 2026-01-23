@@ -144,6 +144,28 @@ function test_copy_corners(sz)
     @test all(w .== q)
 end
 
+@testset "propagator" begin
+    w = propagator_col!(rand(ComplexF32, 10,10,10))
+    q = propagator_col!(rand(ComplexF32, 10,10,1))
+    @test q[:,:,1] == w[:,:,7]
+    w1 = propagator_col((10,10,10))
+    @test w1 == w
+    q1 = propagator_col((10,10,1))
+    @test q1 == q
+end
+
+@testset "phase_kz" begin
+    w = phase_kz_col!(rand(10,10,10))
+    q = phase_kz_col!(rand(Float32, 10,10,1))
+    @test q[:,:,1] ≈ w[:,:,7]
+    w1 = phase_kz_col((10,10,10))
+    w = phase_kz_col!(rand(Float32, 10,10,10))
+    @test w1 == w
+    q1 = phase_kz_col((10,10,1))
+    @test q1 == q
+end
+
+
 @testset "copy_corners" begin
     test_copy_corners((4,4))
     test_copy_corners((4,5))
