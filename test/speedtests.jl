@@ -1,9 +1,10 @@
 using Test
 using IndexFunArrays
 using SeparableFunctions
+# add PlotlyJS, CUDA, BenchmarkTools
 using BenchmarkTools
-using CUDA
 using PlotlyJS
+using CUDA
 
 function speedt_test()
     sz = (256, 256, 256)
@@ -17,7 +18,7 @@ function speedt_test()
     end
     res = get_exp.(CartesianIndices(sz), Ref(Float32(sqrt(2)).*sigma), Ref(offset));  
     @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(0)); # 47.7 ms (2 allocations, 64 Mb) , but 243 ms with offset!
-    @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 243 ms with offset (7 allocations, 64 Mb)!
+    @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 53 ms with offset (7 allocations, 64 Mb)!
 
     res2 = similar(res);
     ress = gaussian_sep(sz, sigma=sigma, offset=offset);
@@ -41,7 +42,7 @@ function speedt_test()
      
     ids = CuArray(CartesianIndices(sz))
     resc = get_exp.(ids, Ref(sigma), Ref(offset)); 
-    @btime CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref(offset)); # 9.5 ms
+    @btime CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref(offset)); # 2.8 ms
 
     t_in_place = @belapsed get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 243 ms with offset (7 allocations, 64 Mb)!
     t_gaussian_col = @belapsed $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset)
@@ -67,9 +68,10 @@ function speedt_test()
     dat_no_cuda = 1000 .*[t_in_place, t_gaussian_col, t_gaussian_lz, t_res2_assign, t_gaussian_sep]
     dat_cuda = 1000 .*[tc_get_exp, tc_gaussian_col, tc_gaussian_lz, tc_res2_assign, tc_gaussian_sep]
     
+    # plot(method, dat_cuda); plot!(method, dat_no_cuda)
     p = plot([
-        bar(name="With CUDA", x=method, y=dat_cuda),
-        bar(name="No CUDA", x=method, y=dat_no_cuda),
+        PlotlyJS.bar(name="With CUDA", x=method, y=dat_cuda),
+        PlotlyJS.bar(name="No CUDA", x=method, y=dat_no_cuda),
     ], Layout(title="3D Gaussian (512x512x256)", yaxis=attr(title="Time [ms]", type="log"))) # barmode="stack", 
 
 
@@ -84,28 +86,41 @@ function speedt_test()
     myzero = zero(real(eltype(arr)))
     # f(x) = cis(sqrt(max(myzero, k2_max - x)) * fac)
     # CUDA has problems with (global) Clojures..., and julia allocates in this case 
-    g(x) = cis(sqrt(max(0f0, 0.25f0 - x)) * 12.566371f0)
+    # g(x) = cis(sqrt(max(0f0, 0.25f0 - x)) * 12.566371f0)
+    g(x) = cis(sqrt(max(zero(typeof(x)), 0.25f0 - x)) * 12.566371f0)
 
     myrr2 = collect(rr2_sep(sz; scale=scale))
     res = g.(rr2_sep(sz; scale=scale))
     @time res .= g.(rr2_sep(sz; scale=scale)); # 11.7 kB
-    t_no_rad = @belapsed res .= g.($myrr2);  # 7 ms
+    t_sep = @belapsed res .= g.(rr2_sep($sz; scale=$scale));  # 7.4 ms
+    t_no_rad = @belapsed res .= g.($myrr2);  # 7.1 ms
 
     @time propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale); # 10.3 kB
     res ≈ arr
     t_rad_speedup = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale); # 2.4 ms
+    t_sep_r2 = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true); # 2.4 ms
     # @time  propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale); # 2.4 ms, 10 kB
 
     myrr2c = CuArray(myrr2)
-    resc = CuArray(res)
-    arrc = CuArray(arr)
-    tc_no_rad = @belapsed CUDA.@sync $resc .= g.($myrr2c);  # 0.1ms
-    tc_rad_speedup = @belapsed  CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale); # 0.26 msec ms
+    # resc = CuArray(res)
+    resc = g.(rr2_sep(CuArray{Float32}, sz; scale=scale))
 
-    method = ["Compute In Place", "Radial Speedup"]
-    dat_no_cuda = 1000 .*[t_no_rad, t_rad_speedup]
-    dat_cuda = 1000 .*[tc_no_rad, tc_rad_speedup]
+    arrc = CuArray(arr)
+    tc_no_rad = @belapsed CUDA.@sync $resc .= g.($myrr2c);  # 0.10ms
+    rr2sep = rr2_sep(CuArray{Float32}, sz; scale=scale)
+    tc_sep = @belapsed CUDA.@sync $resc .= g.(rr2_sep(CuArray{Float32}, $sz; scale=$scale));  # 0.11 ms
+    tc_sep = @belapsed CUDA.@sync $resc .= g.($rr2sep);  # 0.11 ms
+    tc_rad_speedup = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale); # 0.11 msec ms
+    tc_sep_r2 = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true); # 0.11 msec ms
+
+    CUDA.@time g.(rr2_sep(CuArray{Float32}, sz; scale=scale));  # 
+    CUDA.@time propagator_col!(arrc; Δz=Δz, k_max=k_max, scale=scale); #
+
+    method = ["Compute In Place", "Radial Speedup", "Separable r2 only"]
+    dat_no_cuda = 1000 .*[t_no_rad, t_rad_speedup, t_sep_r2]
+    dat_cuda = 1000 .*[tc_no_rad, tc_rad_speedup, tc_sep_r2]
     
+    # plot(method, dat_cuda); plot!(method, dat_no_cuda)
     p = plot([
         bar(name="With CUDA", x=method, y=dat_cuda),
         bar(name="No CUDA", x=method, y=dat_no_cuda),

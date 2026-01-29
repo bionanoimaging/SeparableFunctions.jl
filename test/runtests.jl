@@ -145,24 +145,68 @@ function test_copy_corners(sz)
 end
 
 @testset "propagator" begin
-    w = propagator_col!(rand(ComplexF32, 10,10,10))
-    q = propagator_col!(rand(ComplexF32, 10,10,1))
+    Δz = 0.5
+    w = propagator_col!(rand(ComplexF32, 10,10,10), Δz = Δz)
+    q = propagator_col!(zeros(ComplexF32, 10,10,1), Δz = Δz)
+    q1 = propagator_col!(ones(ComplexF32, 10,10,10), Δz = Δz, ref_idx=1)
+    q2 = propagator_col!(rand(ComplexF32, 10,10,10), Δz = Δz, ref_idx=10, use_sep=true)
     @test q[:,:,1] == w[:,:,7]
-    w1 = propagator_col((10,10,10))
+    @test q[:,:,1] == q1[:,:,2]
+    @test q[:,:,1] ≈ conj.(q2[:,:,9])
+    w1 = propagator_col((10,10,10), Δz = Δz)
     @test w1 == w
-    q1 = propagator_col((10,10,1))
+    q1 = propagator_col((10,10,1), Δz = Δz)
     @test q1 == q
+
+    sampling = (0.25,0.25,0.25)
+    λ = 0.5
+    q2 = propagator_col((10, 10, 10), sampling, λ)
+    tmp = rand(ComplexF32, 10,10,10)
+    q3 = propagator_col!(tmp, sampling, λ)
+    @test w == q2
+    @test w == q3
+    @test w == tmp
 end
 
 @testset "phase_kz" begin
-    w = phase_kz_col!(rand(10,10,10))
-    q = phase_kz_col!(rand(Float32, 10,10,1))
-    @test q[:,:,1] ≈ w[:,:,7]
-    w1 = phase_kz_col((10,10,10))
-    w = phase_kz_col!(rand(Float32, 10,10,10))
+    Δz = 0.5
+    w = phase_kz_col!(rand(Float32, 10,10,10), Δz = Δz)
+    q = phase_kz_col!(rand(Float32, 10,10,1), Δz = Δz)
+    q1 = phase_kz_col!(ones(Float32, 10,10,10), Δz = Δz, ref_idx=1)
+    q2 = phase_kz_col!(rand(Float32, 10,10,10), Δz = Δz, ref_idx=10, use_sep=true)
+    @test q[:,:,1] == w[:,:,7]
+    @test q[:,:,1] == q1[:,:,2]
+    @test q[:,:,1] ≈ .-(q2[:,:,9])
+
+    w1 = phase_kz_col((10,10,10), Δz = Δz)
+    w = phase_kz_col!(rand(Float32, 10,10,10), Δz = Δz)
     @test w1 == w
-    q1 = phase_kz_col((10,10,1))
+    q1 = phase_kz_col((10,10,1), Δz = Δz)
     @test q1 == q
+    # does phase_kz agree to propagator_col
+
+    sampling = (0.25,0.25,0.25)
+    λ = 0.5
+    q2 = phase_kz_col((10, 10, 10), sampling, λ)
+    tmp = rand(Float32, 10,10,10)
+    q3 = phase_kz_col!(tmp, sampling, λ)
+    @test w == q2
+    @test w == q3
+    @test w == tmp
+    q3 = phase_kz_col(Array{Float64}, (10,10,10), sampling, λ; ref_idx=10)
+    @test eltype(q3) == Float64
+    @test q3[6,6,10]==0
+    @test q3[6,6,9] ≈ -0.5
+    q3 = phase_kz_col((10,10,10), sampling, λ; ref_idx=8)
+    @test eltype(q3) == Float32
+    @test q3[6,6,8]==0f0
+    @test q3[6,6,7] ≈ -0.5f0
+    q3 = phase_kz_col((10,10,10), sampling, λ; ref_idx=1)
+    @test eltype(q3) == Float32
+    @test q3[6,6,1] == 0f0
+    @test q3[6,6,2] ≈ 0.5f0
+    @test q3[1,1,1] ≈ 0f0
+    @test q3[1,1,5] ≈ 0f0
 end
 
 
