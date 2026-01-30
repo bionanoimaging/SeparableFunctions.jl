@@ -462,7 +462,7 @@ julia> # Note that a 2D propagator is always propagating by one Δz, thus corres
 julia> p = propagator_col((100,50,30), sampling, λ)
 ```
 """    
-function propagator_col(::Type{TA}, sz::NTuple{N, Int}, sampling::NTuple{3}, λ; ref_idx = sz[3]÷2+1, use_sep=false) where{TA, N}
+function propagator_col(::Type{TA}, sz::NTuple{N, Int}, sampling::NTuple{3}, λ; ref_idx = (length(sz) < 3) ? 1 : sz[3]÷2+1, use_sep=false) where{TA, N}
     if length(sz) > 3
         error("propagators are only allowed up to the third dimension. If you need to propagate several stacks, use broadcasting.")
     end
@@ -475,7 +475,7 @@ function propagator_col(sz::NTuple{N, Int}, sampling::NTuple{3}, λ; ref_idx = (
 end
 
 """
-    phase_kz_col([::Type{TA},] sz::NTuple{N, Int}; Δz=one(eltype(arr)), ref_idx = sz[3]÷2+1, k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    phase_kz_col([::Type{TA},] sz::NTuple{N, Int}; Δz=one(eltype(arr)), ref_idx = (length(sz) < 3) ? 1 : sz[3]÷2+1, k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
 
 Calculates a propagation phase (without the 2pi factor!) for a given z-position, which can be defined via Δz supplied to the function.
 By default, Nyquist sampling it is assumed such that the lateral k_xy corresponds to the XY border in frequency space at the edge 
