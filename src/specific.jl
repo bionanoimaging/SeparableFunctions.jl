@@ -263,7 +263,7 @@ end
 
 ## Here some individual versions based on copy_corners! stuff. They only exist in the _cor version as they are not separable in X and Y.
 """
-    propagator_col([]::Type{TA},] sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1))) where{TA, N}
+    propagator_col([]::Type{TA},] sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1)), ref_idx = (length(sz) < 3) ? 1 : sz[3]÷2+1, use_sep=use_sep) where{TA, N}
 
 generates a propagator for propagating optical fields via exp(i kz Δz) with kz=sqrt(k0^2-kx^2-ky^2). The k-space radius is stated by
 k_max relative to the Nyquist frequency, as long as the scale remains to be 1 ./ (2 max.(sz ./ 2, 1))).
@@ -279,18 +279,21 @@ Note that there is no `propagator_sep` version of this function, since this prop
 + `Δz`:     distance in Z to propagate per slice.
 + `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere. This is not the aperture limit!
 + `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
++ `ref_idx`: reference index at which the propagator has no effect. E.g. `ref_idx=1` means the first slice of the result array does not propagate. By default, the (Fourier space) center position along Z is chosen.
++ `use_sep`: This boolean flag switches to an algorithm using rr2_sep and no corner copies. In CUDA this is a little faster.
+
 """
-function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1)), ref_idx = (length(sz) < 3) ? 1 : sz[3]÷2+1) where{TA, N}
+function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=one(eltype(TA)), k_max=0.5f0, scale=0.5f0 ./ (max.(sz ./ 2, 1)), ref_idx = (length(sz) < 3) ? 1 : sz[3]÷2+1, use_sep=false) where{TA, N}
 # function propagator_col(::Type{TA}, sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1))) where{TA, N}
     if length(sz) > 3
         error("propagators are only allowed up to the third dimension. If you need to propagate several stacks, use broadcasting.")
     end
     arr = TA(undef, sz)
-    propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale, ref_idx = ref_idx) 
+    propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale, ref_idx = ref_idx, use_sep=use_sep) 
 end
 
-function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1)), ref_idx =  (length(sz) < 3) ? 1 : sz[3]÷2+1) where{N}
-    propagator_col(DefaultComplexArrType, sz; Δz=Δz, k_max=k_max, scale=scale, ref_idx = ref_idx)
+function propagator_col(sz::NTuple{N, Int}; Δz=1.0, k_max=0.5, scale=0.5 ./ (max.(sz ./ 2, 1)), ref_idx =  (length(sz) < 3) ? 1 : sz[3]÷2+1, use_sep=false) where{N}
+    propagator_col(DefaultComplexArrType, sz; Δz=Δz, k_max=k_max, scale=scale, ref_idx = ref_idx, use_sep=use_sep)
 end
 
 """
@@ -307,10 +310,10 @@ Note that there is no `propagator_sep` version of this function, since this prop
 # Arguments
 + `arr`:    the array to fill with propagators. If a 3rd dimension is present, a stack a propagators is returned, one for each multiple of Δz.
 + `Δz`:     distance in Z to propagate per slice in relation to the wavelength. Nyquist sampling would be 0.5.
-+ `ref_idx`: reference index at which the propagator has no effect. E.g. `ref_idx=1` means the first slice of the result array does not propagate. By default, the (Fourier space) center position along Z is chosen.
 + `k_max`:  maximum propagation radius in k-space. I.e. limit of the k-sphere in relation to sampling frequency. This is not the aperture limit!
             k_max = 0.5 corresponds to the Nyquist limit.
 + `scale`:  specifies how to interpret k-space positions. Should remain to be 1 ./ (2 max.(sz ./ 2, 1))).
++ `ref_idx`: reference index at which the propagator has no effect. E.g. `ref_idx=1` means the first slice of the result array does not propagate. By default, the (Fourier space) center position along Z is chosen.
 + `use_sep`: This boolean flag switches to an algorithm using rr2_sep and no corner copies. In CUDA this is a little faster.
 
 # Example
@@ -459,7 +462,7 @@ julia> # Note that a 2D propagator is always propagating by one Δz, thus corres
 julia> p = propagator_col((100,50,30), sampling, λ)
 ```
 """    
-function propagator_col(::Type{TA}, sz::NTuple{N, Int}, sampling::NTuple{3}, λ; ref_idx = size(arr,3)÷2+1, use_sep=false) where{TA, N}
+function propagator_col(::Type{TA}, sz::NTuple{N, Int}, sampling::NTuple{3}, λ; ref_idx = sz[3]÷2+1, use_sep=false) where{TA, N}
     if length(sz) > 3
         error("propagators are only allowed up to the third dimension. If you need to propagate several stacks, use broadcasting.")
     end

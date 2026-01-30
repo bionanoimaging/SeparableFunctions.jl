@@ -149,22 +149,24 @@ end
     w = propagator_col!(rand(ComplexF32, 10,10,10), Δz = Δz)
     q = propagator_col!(zeros(ComplexF32, 10,10,1), Δz = Δz)
     q1 = propagator_col!(ones(ComplexF32, 10,10,10), Δz = Δz, ref_idx=1)
-    q2 = propagator_col!(rand(ComplexF32, 10,10,10), Δz = Δz, ref_idx=10, use_sep=true)
+    q2 = propagator_col((10,10,10), Δz = Δz, ref_idx=10, use_sep=true)
     @test q[:,:,1] == w[:,:,7]
     @test q[:,:,1] == q1[:,:,2]
     @test q[:,:,1] ≈ conj.(q2[:,:,9])
     w1 = propagator_col((10,10,10), Δz = Δz)
     @test w1 == w
-    q1 = propagator_col((10,10,1), Δz = Δz)
-    @test q1 == q
+    q1 = propagator_col((10,10), Δz = Δz)
+    @test q1[:,:,1] ≈ q
 
     sampling = (0.25,0.25,0.25)
     λ = 0.5
     q2 = propagator_col((10, 10, 10), sampling, λ)
     tmp = rand(ComplexF32, 10,10,10)
     q3 = propagator_col!(tmp, sampling, λ)
+    q4 = propagator_col((10,10,10), sampling, λ)
     @test w == q2
     @test w == q3
+    @test q4 == q3
     @test w == tmp
 end
 
@@ -175,14 +177,15 @@ end
     q1 = phase_kz_col!(ones(Float32, 10,10,10), Δz = Δz, ref_idx=1)
     q2 = phase_kz_col!(rand(Float32, 10,10,10), Δz = Δz, ref_idx=10, use_sep=true)
     @test q[:,:,1] == w[:,:,7]
-    @test q[:,:,1] == q1[:,:,2]
+    q = phase_kz_col!(rand(Float32, 10,10), Δz = Δz)
+    @test q[:,:] == q1[:,:,2]
     @test q[:,:,1] ≈ .-(q2[:,:,9])
 
     w1 = phase_kz_col((10,10,10), Δz = Δz)
     w = phase_kz_col!(rand(Float32, 10,10,10), Δz = Δz)
     @test w1 == w
-    q1 = phase_kz_col((10,10,1), Δz = Δz)
-    @test q1 == q
+    q1 = phase_kz_col((10,10), Δz = Δz)
+    @test q1 == q[:,:,1]
     # does phase_kz agree to propagator_col
 
     sampling = (0.25,0.25,0.25)
