@@ -1,22 +1,3 @@
-# function gaussian_sep(::Type{TA}, sz::NTuple{N, Int}, sigma,; offset=sz.÷2 .+1) where {TA, N}
-#     invsigma22 = 1 ./(2 .*sigma.^2)
-#     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_create(TA, fct, sz, invsigma22; offset=offset)
-# end
-
-# function gaussian_sep(sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {N}
-#     gaussian_sep(DefaultArrType, sz, sigma; offset=offset)
-# end
-
-# function gaussian_sep_lz(::Type{TA}, sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {TA, N}
-#     invsigma22 = 1 ./(2 .*sigma.^2)
-#     fct = (r, invsigma22, pos) -> exp(-(r-pos)^2*invsigma22)
-#     separable_view(TA, fct, sz, invsigma22; offset=offset)
-# end
-
-# function gaussian_sep_lz(sz::NTuple{N, Int}, sigma, ; offset=sz.÷2 .+1) where {N}
-#     gaussian_sep_lz(DefaultArrType, sz, sigma; offset=offset)
-# end
 using ChainRulesCore
 
 export mem_fct, raw_fct
@@ -24,6 +5,13 @@ export mem_fct, raw_fct
 function generate_functions_expr()
     # offset and scale is already wrapped in the generator function
     # x_expr = :(scale .* (x .- offset))
+    # x below is the offset-corrected position, which is scaled to range liniarly between 0 and 1 from border_in to border_out
+    x_exprW = :(clamp(1 -(2*abs(x)/sz-border_in)/(border_out - border_in),0,1)) 
+    dx_exprW = :(-2*sign(x)/sz/(border_lout-border_in)*(0 < 1 -(2*abs(x)/sz-border_in)/(border_out - border_in) < 1)) 
+    # These are for the Gaussian window:
+    x_exprW2 = :(clamp((2*abs(x)/sz-border_in)/(border_out - border_in),0,Inf))  # no outer border and starting from 0 at the inner border
+    # x_exprW2 = :(clamp.((abs.(scale .* (x .- offset)).-border_in)./(border_out .- border_in),0,Inf))  # no outer border and starting from 0 at the inner border
+    dx_exprW2 = :(2*sign(x)/sz/(border_out - border_in) * ((2*abs(x)/sz-border_in)/(border_out - border_in) > 0))
 
     functions = [
         # Note that there is a problem with the CUDA toolbox. It does not support kwargs (in broadcasting).
@@ -33,82 +21,115 @@ function generate_functions_expr()
         # Rules: the calculation function has no kwargs but the last N arguments are the kwargs of the wrapper function
         # FunctionName, kwarg_names, no_kwargs_function_definition, default_return_type, default_separamble_operator
         (:(gaussian),(sigma=1.0,), :((x,sz, sigma) -> exp(-x^2/(2*sigma^2))), Float32, *, 
-            :((f, x, sz, sigma) -> -x/sigma^2 * f),
-            :((f, x, sz, sigma) -> x^2 /sigma^3 * f)
+            real_arr_type, # function to determin the type of the result array in dependence on the input array type
+            :((f, x, sz, sigma) -> -x/sigma^2 * f), # for the gradient wrt. the first argument
+            :((f, x, sz, sigma) -> x^2 /sigma^3 * f)  # for the gradient wrt. the second argument
             ), 
         (:(normal), (sigma=1.0,), :((x,sz, sigma) -> exp(- x^2/(2*sigma^2))/(sqrt(eltype(x)(2pi))*abs(sigma))), Float32, *,
+            real_arr_type,
             :((f, x, sz, sigma) -> -x/sigma^2 * f),
             :((f, x, sz, sigma) -> (x^2 /sigma^3 - inv(sigma)) * f)
             ),
         (:(sinc), NamedTuple(), :((x,sz) -> sinc(x)), Float32, *,
+            real_arr_type,
             :((f, x, sz) -> ifelse(x == zero(eltype(x)), zeros(eltype(x), size(x)), (cospi(x) - f)/x))
             ),
         # the value "nothing" means that this default argument will not be handed over. But this works only for the last argument!
         (:(exp_ikx), (shift_by=nothing,), :((x,sz, shift_by=sz÷2) -> cis(x*(-eltype(x)(2pi)*shift_by/sz))), ComplexF32, *,
+            complex_arr_type,
             :((f, x, sz, shift_by) -> (-1im*eltype(x)(2pi)*shift_by/sz) * f),
             :((f, x, sz, shift_by) -> (-1im*eltype(x)(2pi)/sz) *x * f)
             ),
+        # todo: maybe the ramp function below can eventually be converted to a version that only uses ranges (like complex_plane)?
         (:(ramp), (slope=0,), :((x,sz, slope) -> slope*x), Float32, +,
+            real_arr_type,
             :((f, x, sz, slope) ->  slope),
             :((f, x, sz, slope) ->  x)
             ), # different meaning than IFA ramp
         (:(rr2), NamedTuple(), :((x, sz) -> (x*x)), Float32, +,
-            :((f, x, sz) ->  2 * x)
+            real_arr_type,
+            :((f, x, sz) ->  2 * x),
             ),
         (:(box), (boxsize=nothing,), :((x, sz, boxsize=sz/2) -> abs(x) <= (boxsize/2)), Bool, *,
-            :((f, x, sz) -> one(eltype(x)))
+            real_arr_type,
+            :((f, x, sz) -> zero(eltype(x)))
             ),
+        (:(window_linear), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> (($x_exprW))), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) -> ($dx_exprW))
+            ),
+        (:(window_hanning), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> sinpi(0.5f0 * ($x_exprW))^2), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) -> ($dx_exprW) * sinpi(0.5f0 * ($x_exprW)) * cospi(0.5f0 * ($x_exprW)))
+            ),
+        (:(window_half_cos), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> sinpi(0.5f0 * ($x_exprW))), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) -> 0.5f0 * cospi(0.5f0 * ($x_exprW)))
+            ),
+        (:(window_hamming), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> 0.54f0 -0.46f0 *cospi(($x_exprW))), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) ->  0.46f0 *sinpi(($x_exprW)))
+            ),
+        (:(window_blackman_harris), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> 0.35875 - 0.48829f0 *cospi(($x_exprW))+0.14128f0 *cospi(2*($x_exprW))-0.01168f0 *cospi(3 *($x_exprW))), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) -> 0.48829f0 *sinpi(($x_exprW)) + 2*0.14128f0 *sinpi(2 *($x_exprW)) + 3f0 * 0.01168f0 *sinpi(3*($x_exprW)))
+            ),
+        (:(window_gaussian), (border_in=0.8, border_out=nothing), :((x, sz, border_in=0.8f0, border_out=1.0f0) -> exp(-2 * abs2(($x_exprW2)))), Float32, *,
+            real_arr_type,
+            :((f, x, sz, border_in, border_out) -> -2*($dx_exprW2) * exp(-2 * abs2(($x_exprW2))))
+            ),
+        (:(complex_plane), NamedTuple(), :(nothing), ComplexF32, complex, 
+            complex_arr_type,
+            :((f, x, sz) ->  one(real(eltype(x))))
+            ), 
     ]
     return functions
 end
-
-# would be nice to have a macro which defines all those function extensions.
-# But its not quite that simple. First try:
-# macro define_separable(basename, fct, basetype, operator)
-#     @eval function $(Symbol(basename, :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
-#         fct = $(fct) # to assign the function to a symbol
-#         separable_create(TA, fct, sz, args...; operator=$(operator), kwargs...)
-#     end
-# end
 
 for F in generate_functions_expr() 
     # default functions with offset and scaling behavior
  
     # define the _raw function
-    @eval function $(Symbol(F[1], :_raw))(x, sz, args...)
-        return $(F[3])(x, sz, args...) 
+    if (F[3] != :(nothing))
+        @eval function $(Symbol(F[1], :_raw))(x, sz, args...)
+            return $(F[3])(x, sz, args...) 
+        end
+    else
+        @eval function $(Symbol(F[1], :_raw))(x, sz, args...)
+            return x 
+        end
     end
     # just the raw version of the function
     @eval export $(Symbol(F[1], :_raw))
 
-    if (length(F) == 6) # a gradient definition was provided explicitely
+    if (length(F) == 7) # a gradient definition was provided explicitely
         # @show "creating rrule for $(Symbol(F[1], :_raw)) 
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy)
             # println("in set_idx_gradient")
-            return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz); dims=1:prod_dims)
+            return mapreduce(*, +, conj.(dy), $(F[7]).(y, x, sz); dims=1:prod_dims)
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz; kwargs...) 
             # println("in rrule raw")
             y = $(Symbol(F[1], :_raw))(x, sz; kwargs...) # to assign the function to a symbol
             function mypullback(dy)
-                mydx =  conj.(dy) .* $(F[6])(y, x, sz; kwargs...)
+                mydx =  conj.(dy) .* $(F[7])(y, x, sz; kwargs...)
                 return NoTangent(), mydx, NoTangent()
             end
             return y, mypullback
         end
         # @show "added rrule for $(Symbol(F[1], :_raw))"
     end
-    if (length(F) == 7) # a gradient definition was provided explicitely
+    if (length(F) == 8) # two gradient definitions were provided explicitely
         # @show "creating rrule for $(Symbol(F[1], :_raw)) "
         @eval function get_idx_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_idx_gradient")
-                return mapreduce(*, +, conj.(dy), $(F[6]).(y, x, sz, args...); dims=1:prod_dims)
+                return mapreduce(*, +, conj.(dy), $(F[7]).(y, x, sz, args...); dims=1:prod_dims)
         end
 
         @eval function get_arg_gradient(::typeof($(Symbol(F[1], :_raw))), prod_dims, y, x, sz, dy, args...)
             # println("in set_arg_gradient")
-            return mapreduce(*, +, conj.(dy), $(F[7]).(y, x, sz, args...), dims=1:prod_dims) 
+            return mapreduce(*, +, conj.(dy), $(F[8]).(y, x, sz, args...), dims=1:prod_dims) 
         end
 
         @eval function ChainRulesCore.rrule(::typeof($(Symbol(F[1], :_raw))), x, sz, args...; kwargs...) 
@@ -117,16 +138,16 @@ for F in generate_functions_expr()
             function mypullback(dy)
                 # println("pb")
                 # @show dy
-                # @show $(F[6])(y, x, sz, args...; kwargs...)
-                mydx =  conj.(dy) .* $(F[6])(y, x, sz, args...; kwargs...)
+                # @show $(F[7])(y, x, sz, args...; kwargs...)
+                mydx =  conj.(dy) .* $(F[7])(y, x, sz, args...; kwargs...)
                 # targ = ntuple(d -> begin
-                #     mydarg = F[6+d]
+                #     mydarg = F[7+d]
                 #     dy .* $(mydarg)(y, x, sz, args...; kwargs...)
                 #     end, length(args))
                 # @show size($(F[7])(y, x, sz, args...; kwargs...))
                 # @show dy
                 # @show dy .* $(F[7])(y, x, sz, args...; kwargs...)
-                mydarg = dot(dy, $(F[7])(y, x, sz, args...; kwargs...)) 
+                mydarg = dot(dy, $(F[8])(y, x, sz, args...; kwargs...)) 
                 # mydarg = sum(dy .* $(F[7])(y, x, sz, args...; kwargs...)) 
                 return NoTangent(), mydx, NoTangent(), mydarg
             end
@@ -140,7 +161,7 @@ for F in generate_functions_expr()
 
     @eval function $(Symbol(F[1], :_col))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_create(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
+        separable_create($(F[6])(TA, Val(length(sz))), fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
  
     @eval function $(Symbol(F[1], :_col))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
@@ -148,9 +169,16 @@ for F in generate_functions_expr()
         separable_create(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
+    @eval function $(Symbol(F[1], :_col))(arr::AbstractArray, args...; kwargs...)
+        sz = size(arr)
+        AT = $(F[6])(typeof(arr))
+        fct = $(F[3]) # to assign the function to a symbol
+        separable_create(AT, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
+    end
+
     @eval function $(Symbol(F[1], :_sep))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        calculate_broadcasted(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
+        calculate_broadcasted($(F[6])(TA, Val(length(sz))), fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_sep))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
@@ -158,34 +186,47 @@ for F in generate_functions_expr()
         calculate_broadcasted(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
-                        all_axes = get_bc_mem(TA, sz, $(F[5]), get_arg_sz(sz, args...))
-                    ) where {TA, N}
-        # fct = $(F[3]) # to assign the function to a symbol
-
-        # @show "call"
-        return calculate_broadcasted_nokw(TA, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]),
-            all_axes=all_axes)
-        # operator=$(F[5])
-        # return calculate_separables_nokw(TA, fct, sz, args...; all_axes=all_axes), operator
+    @eval function $(Symbol(F[1], :_sep))(arr::AbstractArray, args...; kwargs...) 
+        sz = size(arr)
+        AT = $(F[6])(typeof(arr))
+        fct = $(F[3]) # to assign the function to a symbol
+        calculate_broadcasted(AT, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
-    @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
-                        all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5]), get_arg_sz(sz, args...))
-                    ) where {N}
-        # fct = $(F[3]) # to assign the function to a symbol        
-        # @show "call2" 
-        # @show typeof(Array{$(F[4])})
-        # @show typeof($(F[4]))
-        # @show sz
-        # @show args
-        # @show asz = get_arg_sz(sz, args...)
-        ##### Zygote messes this up!:
-        # @show typeof(get_bc_mem(Array{$(F[4])}, sz, $(F[5]), asz))
-        # @show typeof(all_axes)
-        return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
-        # operator=$(F[5])
-        # return calculate_separables_nokw(Array{$(F[4])}, fct, sz, args...; all_axes=all_axes), operator
+    if (F[3] != :(nothing))
+        @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;
+                            all_axes = get_bc_mem(TA, sz, $(F[5]), get_arg_sz(sz, args...))
+                        ) where {TA, N}
+            return calculate_broadcasted_nokw($(F[6])(TA, Val(length(sz))), $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]),
+                all_axes=all_axes)
+        end
+
+        @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;
+                            all_axes = get_bc_mem(Array{$(F[4])}, sz, $(F[5]), get_arg_sz(sz, args...))
+                        ) where {N}
+            return calculate_broadcasted_nokw(Array{$(F[4])}, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
+        end
+
+        @eval function $(Symbol(F[1], :_nokw_sep))(arr::AbstractArray, args...;
+                            all_axes = get_bc_mem($(F[6])(typeof(arr)), size(arr), $(F[5]), get_arg_sz(size(arr), args...))
+                        ) 
+            sz = size(arr)
+            AT = $(F[6])(typeof(arr))
+            return calculate_broadcasted_nokw(AT, $(Symbol(F[1], :_raw)), sz, args...; defaults=$(F[2]), operator=$(F[5]), all_axes=all_axes)
+        end
+    else # if no function is provided no allocation is necessary
+        @eval function $(Symbol(F[1], :_nokw_sep))(::Type{TA}, sz::NTuple{N, Int}, args...;) where {TA, N}
+            return calculate_broadcasted_nokw($(F[6])(TA, Val(length(sz))), nothing, sz, args...; defaults=$(F[2]), operator=$(F[5]))
+        end
+
+        @eval function $(Symbol(F[1], :_nokw_sep))(sz::NTuple{N, Int}, args...;) where {N}
+            return calculate_broadcasted_nokw(Array{$(F[4])}, nothing, sz, args...; defaults=$(F[2]), operator=$(F[5]))
+        end
+        @eval function $(Symbol(F[1], :_nokw_sep))(arr::AbstractArray, args...;) 
+            sz = size(arr)
+            AT = $(F[6])(typeof(arr))
+            return calculate_broadcasted_nokw(AT, nothing, sz, args...; defaults=$(F[2]), operator=$(F[5]))
+        end
     end
 
     @eval function $(Symbol(F[1], :_vec))(::Type{TA}, sz::NTuple{N, Int}, vec;
@@ -200,9 +241,9 @@ for F in generate_functions_expr()
         if any(isa.(args, Tuple))
             error("use vectors rather than tuples in component arrays, since Zygote has trouble with tuples.")
         end
-        all_axes = isnothing(all_axes) ? get_bc_mem(TA, sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;        
+        all_axes = isnothing(all_axes) ? get_bc_mem($(F[6])(TA, Val(length(sz))), sz, $(F[5]), get_arg_sz(sz, off, sca, bg, intensity, args...)) : all_axes;        
         # use the return value instead of all_axes directly, since only this triggers the gradient calculation correctly
-        return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))(TA, sz, off, sca, args...; all_axes=all_axes))
+        return bg .+ intensity .* ($(Symbol(F[1], :_nokw_sep))($(F[6])(TA, Val(length(sz))), sz, off, sca, args...; all_axes=all_axes))
     end
 
     @eval function $(Symbol(F[1], :_vec))(sz::NTuple{N, Int}, vec;
@@ -227,15 +268,27 @@ for F in generate_functions_expr()
         end
         return $(Symbol(F[1], :_vec))(TA, sz, vec; all_axes=all_axes)        
     end
+    @eval function $(Symbol(F[1], :_vec))(arr::AbstractArray, vec;
+        all_axes = nothing) 
+        sz = size(arr)
+        AT = $(F[6])(typeof(arr))
+        return $(Symbol(F[1], :_vec))(AT, sz, vec; all_axes = all_axes)
+    end
 
     @eval function $(Symbol(F[1], :_lz))(::Type{TA}, sz::NTuple{N, Int}, args...; kwargs...) where {TA, N}
         fct = $(F[3]) # to assign the function to a symbol
-        separable_view(TA, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
+        separable_view($(F[6])(TA, Val(length(sz))), fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
     end
 
     @eval function $(Symbol(F[1], :_lz))(sz::NTuple{N, Int}, args...; kwargs...) where {N}
         fct = $(F[3]) # to assign the function to a symbol
         separable_view(Array{$(F[4])}, fct, sz, args...; defaults=$(F[2]), operator=$(F[5]), kwargs...)
+    end
+
+    @eval function $(Symbol(F[1], :_lz))(arr::AbstractArray, args...; kwargs...) 
+        sz = size(arr)
+        AT = $(F[6])(typeof(arr))
+        return $(Symbol(F[1], :_lz))(AT, sz, args...; kwargs...)
     end
 
     @eval mem_fct(::typeof($(Symbol(F[1], :_col))), ::Type{AT}, sz, hyper_sz=()) where AT = get_bc_mem(AT, sz, $(F[5]), hyper_sz)

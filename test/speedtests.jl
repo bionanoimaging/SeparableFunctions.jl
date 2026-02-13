@@ -18,51 +18,52 @@ function speedt_test()
     end
     res = get_exp.(CartesianIndices(sz), Ref(Float32(sqrt(2)).*sigma), Ref(offset));  
     @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(0)); # 47.7 ms (2 allocations, 64 Mb) , but 243 ms with offset!
-    @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 53 ms with offset (7 allocations, 64 Mb)!
+    @btime get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 56 ms with offset (7 allocations, 64 Mb)!
 
     res2 = similar(res);
     ress = gaussian_sep(sz, sigma=sigma, offset=offset);
-    @btime $ress = gaussian_sep($sz, sigma=$sigma, offset=$offset); # 8 µs
+    @btime $ress = gaussian_sep($sz, sigma=$sigma, offset=$offset); # 7.5 µs
     resns = gaussian_nokw_sep(sz, offset, 1f0, sigma); 
-    @btime $resns = gaussian_nokw_sep($sz, $offset, 1f0, $sigma); # 8 µs
+    @btime $resns = gaussian_nokw_sep($sz, $offset, 1f0, $sigma); # 6.5 µs
     res2 .= ress; 
     res2 ≈ res
-    @btime $res2 .= $ress; # 8.9 ms
-    @btime $res2 = similar($res); # 8 µs
-    @btime $res2 .= gaussian_sep($sz, sigma=$sigma, offset=$offset); # 8.4 ms
+    @btime $res2 .= $ress; # 9.4 ms
+    @btime $res2 = similar($res); # 7 µs
+    @btime $res2 .= gaussian_sep($sz, sigma=$sigma, offset=$offset); # 8.9 ms
 
     res3 = gaussian_col(sz, sigma=sigma, offset=offset);
-    t_col = @btime $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset); # 14 ms
+    t_col = @btime $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset); # 18 ms
 
-    @btime $res2 .= SeparableFunctions.gaussian_lz($sz, sigma=$sigma, offset=$offset); # 8.47 ms
+    @btime $res2 .= SeparableFunctions.gaussian_lz($sz, sigma=$sigma, offset=$offset); # 9.6 ms
 
     resc = CuArray(res);
-    res3c = gaussian_col(typeof(resc), sz, sigma=sigma, offset=offset); # 
-    @btime CUDA.@sync $res3c = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset); # 1.06 ms
+    res3c = gaussian_col(resc; sigma=sigma, offset=offset); # 
+    typeof(res3c)
+    @btime CUDA.@sync $res3c = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset); # 2.95 ms was 1.06 ms?
      
     ids = CuArray(CartesianIndices(sz))
     resc = get_exp.(ids, Ref(sigma), Ref(offset)); 
     @btime CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref(offset)); # 2.8 ms
 
-    t_in_place = @belapsed get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)); # 47.7 ms, but 243 ms with offset (7 allocations, 64 Mb)!
-    t_gaussian_col = @belapsed $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset)
-    t_gaussian_lz = @belapsed $res2 .= SeparableFunctions.gaussian_lz($sz, sigma=$sigma, offset=$offset)
+    t_in_place = @belapsed get_exp.(CartesianIndices($sz), Ref($sigma), Ref(offset)) # 59 ms with offset (7 allocations, 64 Mb)!
+    t_gaussian_col = @belapsed $res3 = gaussian_col($sz, sigma=$sigma, offset=$offset) # 17 ms
+    t_gaussian_lz = @belapsed $res2 .= SeparableFunctions.gaussian_lz($sz, sigma=$sigma, offset=$offset) # 9 ms
     # t_gaussian_nokw_sep = @belapsed $resns = gaussian_nokw_sep($sz, $offset, 1f0, 1f0, $sigma)
-    t_res2_assign = @belapsed $res2 .= $ress
+    t_res2_assign = @belapsed $res2 .= $ress # 10.4 ms
     # t_similar_res = @belapsed $res2 = similar($res)
-    t_gaussian_sep = @belapsed res_gs = gaussian_sep($sz, sigma=$sigma, offset=$offset)
+    t_gaussian_sep = @belapsed res_gs = gaussian_sep($sz, sigma=$sigma, offset=$offset) # 8 µs
 
 
-    tc_get_exp = @belapsed CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref($offset))
-    tc_gaussian_col = @belapsed CUDA.@sync $res3 = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset)
+    tc_get_exp = @belapsed CUDA.@sync $resc = get_exp.($ids, Ref($sigma), Ref($offset)) # 2.8 ms
+    tc_gaussian_col = @belapsed CUDA.@sync $res3 = gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset) # 2.9 ms
 
     # NOT working: resc .= SeparableFunctions.gaussian_lz(typeof(resc), sz, sigma=sigma, offset=offset)
     tc_gaussian_lz = NaN # @belapsed collect(SeparableFunctions.gaussian_lz(typeof($resc), $sz, sigma=$sigma, offset=$offset))
-    tc_gaussian_sep = @belapsed CUDA.@sync res_gsc = gaussian_sep(typeof(resc), $sz, sigma=$sigma, offset=$offset)
-    tc_gaussian_col = @belapsed CUDA.@sync gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset)
+    tc_gaussian_sep = @belapsed CUDA.@sync res_gsc = gaussian_sep(typeof(resc), $sz, sigma=$sigma, offset=$offset) # 55 µs
+    tc_gaussian_col = @belapsed CUDA.@sync gaussian_col(typeof(resc), $sz, sigma=$sigma, offset=$offset) # 3.0 ms
 
-    res3_sep = gaussian_sep(typeof(resc), sz, sigma=sigma, offset=offset); # 
-    tc_res2_assign = @belapsed CUDA.@sync $resc .= $res3_sep
+    res3_sep = gaussian_sep(typeof(resc), sz, sigma=sigma, offset=offset);  
+    tc_res2_assign = @belapsed CUDA.@sync $resc .= $res3_sep # 2.9 ms
     
     method = ["Compute In Place", "Collect Separables", "Lazy Arrays", "Collect Precomputed", "Precompute"]
     dat_no_cuda = 1000 .*[t_in_place, t_gaussian_col, t_gaussian_lz, t_res2_assign, t_gaussian_sep]
@@ -91,14 +92,14 @@ function speedt_test()
 
     myrr2 = collect(rr2_sep(sz; scale=scale))
     res = g.(rr2_sep(sz; scale=scale))
-    @time res .= g.(rr2_sep(sz; scale=scale)); # 11.7 kB
-    t_sep = @belapsed res .= g.(rr2_sep($sz; scale=$scale));  # 7.4 ms
-    t_no_rad = @belapsed res .= g.($myrr2);  # 7.1 ms
+    @time res .= g.(rr2_sep(sz; scale=scale)); # 10 ms, 10.27 kB
+    t_sep = @belapsed res .= g.(rr2_sep($sz; scale=$scale));  # 8.4 ms
+    t_no_rad = @belapsed res .= g.($myrr2);  # 8.2 ms
 
-    @time propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale); # 10.3 kB
+    @time propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale); # 5.4 ms, 10.3 kB
     res ≈ arr
-    t_rad_speedup = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale); # 2.4 ms
-    t_sep_r2 = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true); # 2.4 ms
+    t_rad_speedup = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale) # 3.4 ms
+    t_sep_r2 = @belapsed  propagator_col!($arr; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true) # 7.6 ms was 2.4 ms
     # @time  propagator_col!(arr; Δz=Δz, k_max=k_max, scale=scale); # 2.4 ms, 10 kB
 
     myrr2c = CuArray(myrr2)
@@ -106,12 +107,12 @@ function speedt_test()
     resc = g.(rr2_sep(CuArray{Float32}, sz; scale=scale))
 
     arrc = CuArray(arr)
-    tc_no_rad = @belapsed CUDA.@sync $resc .= g.($myrr2c);  # 0.10ms
+    tc_no_rad = @belapsed CUDA.@sync $resc .= g.($myrr2c);  # 0.15ms
     rr2sep = rr2_sep(CuArray{Float32}, sz; scale=scale)
-    tc_sep = @belapsed CUDA.@sync $resc .= g.(rr2_sep(CuArray{Float32}, $sz; scale=$scale));  # 0.11 ms
-    tc_sep = @belapsed CUDA.@sync $resc .= g.($rr2sep);  # 0.11 ms
-    tc_rad_speedup = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale); # 0.11 msec ms
-    tc_sep_r2 = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true); # 0.11 msec ms
+    tc_sep = @belapsed CUDA.@sync $resc .= g.(rr2_sep(CuArray{Float32}, $sz; scale=$scale));  # 0.179 ms
+    tc_sep = @belapsed CUDA.@sync $resc .= g.($rr2sep);  # 0.152 ms
+    tc_rad_speedup = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale); # 0.170 msec ms
+    tc_sep_r2 = @belapsed CUDA.@sync propagator_col!($arrc; Δz=$Δz, k_max=$k_max, scale=$scale, use_sep=true); # 0.171 msec ms
 
     CUDA.@time g.(rr2_sep(CuArray{Float32}, sz; scale=scale));  # 
     CUDA.@time propagator_col!(arrc; Δz=Δz, k_max=k_max, scale=scale); #

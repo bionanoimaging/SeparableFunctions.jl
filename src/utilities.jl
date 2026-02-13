@@ -118,9 +118,27 @@ end
 estimates the size of the arguments.
 This is useful for the memory allocation function, which requires the extra size of the arguments.
 returned is a tuple of extra dimensions. This can be used directly in the memory allocation function.
+
+# Parameters
+`sz`: size of the final array 
+`args...`: various arguments such as offset or scale etc.
+
+It returns the "hyper_sz" which specifies the size of hyperplanes to pre-allocate as outer dimensions to `sz`. If vectors such as `offset` or `scale` specify vectors oriented along any other directions.
+These will automatically be applied differently to each such hyperplane. E.g.: offfset=[reshape([1.0,2.0,3.0],(1,1,3)), reshape([-1.0,1.0,-2.0],(1,1,3))]
+ for a 2D sz=(512, 512) and 3 hyperplanes.
+
+# Example
+sz = (512, 512)
+off = (reshape([1.0,2.0,3.0],(1,1,3)), reshape([-1.0,1.0,-2.0],(1,1,3)))
+sca = 3
+get_arg_sz(sz, off, sca)
 """
 function get_arg_sz(sz, args...)
     max(size.(get_vec_dim.(args, 1, Ref(sz)))...)[length(sz)+1:end]
+end
+
+function get_arg_sz(sz, arg)
+    size(get_vec_dim(arg, 1, Ref(sz)))[length(sz)+1:end]
 end
 
 function get_arg_sz(sz)
@@ -136,7 +154,7 @@ It should be passed to the `calculate_separables_nokw` function via the all_axes
 Parameters:
 - AT: Array type. Can also be a CuArray
 - `sz`: size of the separable part of the data. THis does not include the hyperplanes.
-- `hyper_sz`: specifies the size of hyperplanes to pre-allocate as outr dimensions to `sz`. If vectors such as `offset` or `scale` specify vectors oriented along any other directions.
+- `hyper_sz`: specifies the size of hyperplanes to pre-allocate as outer dimensions to `sz`. If vectors such as `offset` or `scale` specify vectors oriented along any other directions.
  These will automatically be applied differently to each such hyperplane. E.g.: offfset=[reshape([1.0,2.0,3.0],(1,1,3)),reshape([-1.0,1.0,-2.0],(1,1,3))]
  for a 2D sz=(512,512) and 3 hyperplanes.
 """

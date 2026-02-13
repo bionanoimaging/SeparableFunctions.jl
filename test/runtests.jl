@@ -6,7 +6,7 @@ using Zygote
 using Random
 using ComponentArrays
 
-function test_fct(T, fcts, sz, args...; kwargs...)
+function test_fct(T, fcts, sz, args...; no_mem=false, kwargs...)
     AT = Array{T}
     ifa, fct = fcts
     a = let 
@@ -29,7 +29,11 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     @test eltype(res)==T
 
     all_axes = mem_fct(fct, AT, sz)# get_bc_mem(AT, sz, *) # zeros(T, prod(sz))
-    res2 = fct(AT, sz, args...; all_axes = all_axes, kwargs...)
+    if (no_mem)
+        res2 = fct(AT, sz, args...; kwargs...)
+    else
+        res2 = fct(AT, sz, args...; all_axes = all_axes, kwargs...)
+    end
     if typeof(res2) <: Tuple
         res2 = res2[2].(res2[1]...)
     end
@@ -37,6 +41,11 @@ function test_fct(T, fcts, sz, args...; kwargs...)
     res2 = collect(res2)
     @test (typeof(res2) <: AbstractArray) == true
     @test res≈res2
+
+    # now provide another array as input
+    res3 = fct(res2, args...; kwargs...)
+    @test res2≈collect(res3)
+
 #    @test sum(abs.(all_axes)) > 0
 end
 
@@ -46,15 +55,39 @@ function test_fct_t(fcts, sz, args...; kwargs...)
     test_fct(Float64, fcts, sz, args...;kwargs...)
 end
 
+@testset "utilities" begin
+    @test SeparableFunctions.get_arg_sz((20,20), reshape([5,6,7], (1,1,1,3))) == (1,3)
+end
+
+@testset "calculate_broadcasted" begin
+    fctr = (r, sz)-> (r)
+    sz = (5,6)
+    my_pos = calculate_broadcasted(fctr, sz; operator=+)
+    @test (my_pos .+ 0)[3,4]== 0
+
+    fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
+    sigma = (0.5, 1.0)
+    pos = (0,0.0)
+    sz = (6,5)
+    my_gaussian = calculate_broadcasted(fct, sz, pos, sigma; operator=*)
+    @test (my_gaussian .+ 0)[4,3] == 1
+
+    # specialized version with fct == nothing:
+    q = calculate_broadcasted(Array{Float64,2}, nothing, (4,3); offset=(2,2), scale=(1,1), operator=complex)
+
+    @test typeof(q.args[1]) <: Base.ReshapedArray{Float64, 2, StepRangeLen{Float64, Float64, Float64, Int64}, Tuple{}}
+    @test (q .+ 0)[1,1] == -1 - 1im
+end
+
 @testset "calculate_separables" begin
     sz = (13,15)
     fct = (r, sz, sigma)-> exp(-r^2/(2*sigma^2))
     offset = (2.2, -2.2); scale = (1.1, 1.2); 
-    @time gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset = offset .+ (0.1,0.2), scale=scale)
+    gauss_sep = calculate_separables(fct, sz, (0.5,1.0), offset = offset .+ (0.1,0.2), scale=scale)
     @test size(.*(gauss_sep...)) == sz
     # test with preallocated array
     all_axes = get_sep_mem(Array{Float32}, sz) # zeros(Float32, prod(sz))
-    @time gauss_sep = calculate_separables(fct, sz, (0.5, 1.0), all_axes = all_axes)
+    gauss_sep = calculate_separables(fct, sz, (0.5, 1.0), all_axes = all_axes)
     @test all_axes[1][7] ≈ 1.0
     @test all_axes[2][8] ≈ 1.0
 end
@@ -136,6 +169,42 @@ end
     test_fct(Float32, (mysinc, SeparableFunctions.sinc_lz), sz; scale=scale);
     test_fct(Float32, (mysinc, sinc_sep), sz; scale=scale);
     test_fct(Float32, (mysinc, sinc_nokw_sep), sz, nothing, scale);
+end
+
+function test_win(fct_ref, fct_col, fct_lz, fct_sep, fct_nokw_sep)
+    sz = (12, 23)
+    bin = 0.66
+    bout = (0.8, 1.1)
+    mywin = fct_ref(sz, border_in=bin, border_out=bout)
+    test_fct(Float32, (mywin, fct_col), sz; border_in=bin, border_out=bout);
+    test_fct(Float32, (mywin, fct_lz), sz; border_in=bin, border_out=bout);
+    test_fct(Float32, (mywin, fct_sep), sz; border_in=bin, border_out=bout);
+    test_fct(Float32, (mywin, fct_nokw_sep), sz, nothing, nothing, bin, bout);
+end
+
+@testset "windows" begin
+    test_win(window_linear, window_linear_col, SeparableFunctions.window_linear_lz, window_linear_sep, window_linear_nokw_sep)    
+    test_win(window_hanning, window_hanning_col, SeparableFunctions.window_hanning_lz, window_hanning_sep, window_hanning_nokw_sep)    
+    test_win(window_half_cos, window_half_cos_col, SeparableFunctions.window_half_cos_lz, window_half_cos_sep, window_half_cos_nokw_sep)    
+    test_win(window_hamming, window_hamming_col, SeparableFunctions.window_hamming_lz, window_hamming_sep, window_hamming_nokw_sep)    
+    test_win(window_blackman_harris, window_blackman_harris_col, SeparableFunctions.window_blackman_harris_lz, window_blackman_harris_sep, window_blackman_harris_nokw_sep)    
+    test_win(window_gaussian, window_gaussian_col, SeparableFunctions.window_gaussian_lz, window_gaussian_sep, window_gaussian_nokw_sep)    
+end
+
+@testset "complex_plane" begin
+    sz = (13, 15)
+    offset = (0.2,3.3)
+    scale = (1.1,0.5)
+    mycpx = xx(Float32, sz; offset=offset, scale=scale) .+ 1im.*yy(Float32, sz; offset=offset, scale=scale)
+    test_fct(ComplexF32, (mycpx, complex_plane_col), sz; offset=offset, scale=scale, no_mem=true);
+    test_fct(ComplexF32, (mycpx, SeparableFunctions.complex_plane_lz), sz; offset=offset, scale=scale, no_mem=true);
+    test_fct(ComplexF32, (mycpx, complex_plane_sep), sz; offset=offset, scale=scale, no_mem=true);
+    offset = sz .÷ 2 .+1 # try some offset not in the center
+    scale = (1.0, 1.0) # and a non-unity scale
+    mycpx = xx(Float32, sz; offset=offset, scale=scale) .+ 1im.*yy(Float32, sz; offset=offset, scale=scale)
+    # complex_plane_nokw_sep(sz, offset, scale)
+    # test_fct_t((mycpx, complex_plane_nokw_sep), sz); # should be the same as the default
+    test_fct(ComplexF32, (mycpx, complex_plane_nokw_sep), sz; no_mem=true);
 end
 
 function test_copy_corners(sz)

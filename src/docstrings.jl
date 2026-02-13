@@ -1,10 +1,13 @@
 common_docstring = "To create the array on the GPU
-supply for example CuArray{Float32} as the array type. Note that the `_col` version yields a collected array, the `_lz` version a `LazyArray` and
-the `_sep` version an iterable of one-dimensional but oriented arrays, which can be used via the `.*(res...)` syntax with `res` being the result of the `_sep` call.
+supply for example an array of type `CuArray{Float32}` or `CuArray{Float32}` as the array type. 
+Note that the `_col` version yields a collected array, the `_lz` version a `LazyArray` and
+the `_sep` version a broadcasted type which fuses seamslessly with other broadcast operations, but can also be stored in a variable for later (lazy) fusion.
+The result type is defined by the array type, except that the `complex` or `real` element-type is pre-defined.
 
 # Arguments
 + `TA`:     optionally an array type can be supplied. The default is Array{Float32}
 + `sz`:     size of the result array
++ `arr`:    an alternative to `TA` and `sz`, presenting a template array from which the type of the array and the size are extracted.
 
 + `offset`: center position of the array
 "
@@ -13,10 +16,11 @@ returns_col = "returns the collected N-dimensional array."
 returns_lz = "returns the a lazy version of an N-dimensional array only using memory for the separated 1-dimensional arrays. See the `_col` version for an example."
 returns_sep = "returns a Broadcasted iterable with several one-dimensional arrays, which can be used like an array. Note assigning it to a variable is not allocating, only copy the data."
 
-gaussian_docstring = "creates a multidimensional Gaussian by exployting separability speeding up the calculation."
+gaussian_docstring = "creates a multidimensional Gaussian by exploiting separability speeding up the calculation. "
 
 """
     gaussian_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_col(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -40,6 +44,7 @@ gaussian_col
 
 """
     gaussian_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_lz(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -50,6 +55,7 @@ gaussian_lz
 
 """
     gaussian_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    gaussian_sep(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(gaussian_docstring)$(common_docstring)
 
@@ -57,11 +63,13 @@ $(gaussian_docstring)$(common_docstring)
 $(returns_sep)
 """
 gaussian_sep
+
 ###
 normal_docstring = "creates a multidimensional normalized Gaussian by exployting separability speeding up the calculation. The integral of the multidimensional array, if it where infinite, is normalized to one."
 
 """
     normal_col([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_col(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -84,6 +92,7 @@ normal_col
 
 """
     normal_lz([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_lz(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -94,6 +103,7 @@ normal_lz
 
 """
     normal_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    normal_sep(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(normal_docstring)$(common_docstring)
 
@@ -102,11 +112,64 @@ $(returns_sep)
 """
 normal_sep
 
+### 
+complex_plane_docstring = "creates a complex plane according to the x and y coordinates."
+
+"""
+    complex_plane_col([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    complex_plane_col(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+
+$(complex_plane_docstring)$(common_docstring)
+
+$(returns_col)
+#Example
+```jldoctest
+julia> pos = (0, 1.1); 
+julia> cpx = complex_plane_col((6,5); offset=pos)
+6×5 Matrix{ComplexF32}:
+ 1.0-0.1im  1.0+0.9im  1.0+1.9im  1.0+2.9im  1.0+3.9im
+ 2.0-0.1im  2.0+0.9im  2.0+1.9im  2.0+2.9im  2.0+3.9im
+ 3.0-0.1im  3.0+0.9im  3.0+1.9im  3.0+2.9im  3.0+3.9im
+ 4.0-0.1im  4.0+0.9im  4.0+1.9im  4.0+2.9im  4.0+3.9im
+ 5.0-0.1im  5.0+0.9im  5.0+1.9im  5.0+2.9im  5.0+3.9im
+ 6.0-0.1im  6.0+0.9im  6.0+1.9im  6.0+2.9im  6.0+3.9im
+```
+"""
+complex_plane_col
+
+"""
+    complex_plane_lz([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    complex_plane_lz(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+
+$(complex_plane_docstring)$(common_docstring)
+
+$(returns_lz)
+"""
+complex_plane_lz
+
+"""
+    complex_plane_sep([::Type{TA},] sz::NTuple{N, Int}; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    complex_plane_sep(arr:AbstractArray; sigma=ones(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+
+$(complex_plane_docstring)$(common_docstring)
+
+$(returns_sep)
+#Example
+```jldoctest
+julia> pos = (0, 1.1); 
+julia> cpx = complex_plane_sep((6,5); offset=pos)
+julia> typeof(cpx.args[1]) # No actual memory is allocated as only ranges are stored internally
+Base.ReshapedArray{Float32, 2, StepRangeLen{Float32, Float32, Float32, Int64}, Tuple{}}
+```
+"""
+complex_plane_sep
+
 ###
 rr2_docstring = "yields the absolute square of the distance to the zero-position."
 
 """
     rr2_col([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_col(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_col)
@@ -127,6 +190,7 @@ rr2_col
 
 """
     rr2_lz([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_lz(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_lz)
@@ -135,6 +199,7 @@ rr2_lz
 
 """
     rr2_sep([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    rr2_sep(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(rr2_docstring)$(common_docstring)
 $(returns_sep)
@@ -146,6 +211,7 @@ sinc_docstring = "yields the outer product of sinc functions. This corresponds t
 
 """
     sinc_col([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_col(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_col)
@@ -166,6 +232,7 @@ sinc_col
 
 """
     sinc_lz([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_lz(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_lz)
@@ -173,7 +240,8 @@ $(returns_lz)
 sinc_lz
 
 """
-sinc_sep([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_sep([::Type{TA},] sz::NTuple{N, Int}; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    sinc_sep(arr:AbstractArray; offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(sinc_docstring)$(common_docstring)
 $(returns_sep)
@@ -185,6 +253,7 @@ box_docstring = "creates a Boolean box, being True inside and False outside. The
 
 """
     box_col([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_col(arr:AbstractArray; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -207,6 +276,7 @@ box_col
 
 """
     box_lz([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_lz(arr:AbstractArray; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -216,7 +286,8 @@ $(returns_lz)
 box_lz
 
 """
-box_sep([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_sep([::Type{TA},] sz::NTuple{N, Int}; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    box_sep(arr:AbstractArray; boxsize=sz./2, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -230,6 +301,7 @@ ramp_docstring = "creates an N-dimensional ramp along the gradient-direction def
 
 """
     ramp_col([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_col(arr:AbstractArray; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -250,6 +322,7 @@ ramp_col
 
 """
     ramp_lz([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_lz(arr:AbstractArray; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -260,6 +333,7 @@ ramp_lz
 
 """
     ramp_sep([::Type{TA},] sz::NTuple{N, Int}; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    ramp_sep(arr:AbstractArray; slope, offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(ramp_docstring)$(common_docstring)
 
@@ -274,6 +348,7 @@ compared to the version in `IndexFunArray.jl`. Here the default scaling of 1.0 c
 
 """
     exp_ikx_col([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_col(arr:AbstractArray; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 
@@ -296,6 +371,7 @@ exp_ikx_col
 
 """
     exp_ikx_lz([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_lz(arr:AbstractArray; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(box_docstring)$(common_docstring)
 
@@ -306,6 +382,7 @@ exp_ikx_lz
 
 """
     exp_ikx_sep([::Type{TA},] sz::NTuple{N, Int}; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
+    exp_ikx_sep(arr:AbstractArray; shift_by=zeros(eltype(TA),N), offset=sz.÷2 .+1, scale=1.0) where {TA, N}
 
 $(exp_ikx_docstring)$(common_docstring)
 

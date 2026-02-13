@@ -9,6 +9,7 @@ This function is used in `separable_view` and `separable_create`.
 #Arguments
 + `AT`:     optional type signfying the array result type. You can for example use `CuArray{Float32}` using `CUDA` to create the views on the GPU.
 + `fct`:    the function to calculate for each axis index (no need for broadcasting!) of this iterable of seperable axes. Note that the first arguments of `fct` have to be the index of this coordinate and the size of this axis. Any further `args` and `nargs` can follow. Often the second argument is not used but it still needs to be present.
+            If `fct` is `nothing`, the resulting Tuple contains only `Base.ReshapeArray`of `Range`, which means no memory is allocated here. 
 + `sz`:     the size of the result array (when appying the one-D axes)
 + `offset`: specifying the center (zero-position) of the result array in one-based coordinates. The default corresponds to the Fourier-center.
 + `scale`:  multiplies the index before passing it to `fct`
@@ -30,6 +31,19 @@ julia> gauss_sep = SeparableFunctions.calculate_separables_nokw(Array{Float32}, 
  0.0871608    0.477114     0.960789     0.71177      0.19398
  0.0175975    0.0963276    0.19398      0.143704     0.0391639
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
+
+julia> q = calculate_separables(Array{Float64,2}, nothing, (4,3))
+([-2.0; -1.0; 0.0; 1.0;;], [-1.0 0.0 1.0])
+
+julia> typeof(q)
+Tuple{Base.ReshapedArray{Float64, 2, StepRangeLen{Float64, Float64, Float64, Int64}, Tuple{}}, Base.ReshapedArray{Float64, 2, StepRangeLen{Float64, Float64, Float64, Int64}, Tuple{}}}
+
+julia> complex.(q...)
+4×3 Matrix{ComplexF64}:
+ -2.0-1.0im  -2.0+0.0im  -2.0+1.0im
+ -1.0-1.0im  -1.0+0.0im  -1.0+1.0im
+  0.0-1.0im   0.0+0.0im   0.0+1.0im
+  1.0-1.0im   1.0+0.0im   1.0+1.0im
 ```
 """
 function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, 
@@ -47,26 +61,29 @@ function calculate_separables_nokw(::Type{AT}, fct, sz::NTuple{N, Int},
         all_axes = get_sep_mem(AT, sz, get_arg_sz(sz, offset, scale, args...))
     end                                
 
-    # offset = ntuple((d) -> pick_n(d, offset), Val(N))
-    # scale = ntuple((d) -> pick_n(d, scale), Val(N))
-
-    # below the cast of the indices is needed to make CuArrays work
-    # for (res, d) in zip(all_axes, 1:N)
-    #     in_place_assing!(res, d, fct, get_1d_ids(d, sz, offset, scale), sz[d], arg_n(d, args, RT))
-    # end
-    # idcs = ntuple((d) -> scale[d] .* ((1:sz[d]) .- offset[d]), Val(N))
-    # args_1d = ntuple((d) -> arg_n(d, args), Val(N))
-    # in_place_assing!.(all_axes, 1, fct, idcs, sz, args_1d)
     for (res, sz1d, d) in zip(all_axes, sz, 1:N)
-        # off = get_vec_dim(offset, d, sz) # not needed any more since in get_1d_ids
-        # sca = get_vec_dim(scale, d, sz)
         idc = get_1d_ids(d, sz, offset, scale)
         args_d = arg_n(d, args, RT, sz) # 
-        # in_place_assing!(res, 1, fct, idc, sz1d, args_d)
         res .= fct.(idc, sz1d, args_d...) # 5 allocs, 160 bytes
     end
     return all_axes
     # return res
+end
+
+# specialized version for no function given. This returns just the (modified) ranges as axes
+function calculate_separables_nokw(::Type{AT}, ::Nothing, sz::NTuple{N, Int}, 
+                                offset = nothing,
+                                scale = nothing,
+                                args...; 
+                                all_axes = nothing,
+                                kwargs...) where {AT, N}
+
+    RT = real(float(eltype(AT)))
+    RAT = similar_arr_type(AT, RT, Val(1))
+    offset = isnothing(offset) ? (sz.÷2 .+1 ) : RT.(offset)
+    scale = isnothing(scale) ? RAT([one(RT)]) : RT.(scale)
+
+    return ntuple((d)->get_1d_ids(d, sz, offset, scale), N)
 end
 
 """
@@ -82,8 +99,6 @@ get_1d_ids(d, sz::NTuple{N, Int}, offset::NumVecTup, scale::NumVecTup) where {N}
 get_1d_ids(d, sz::NTuple{N, Int}, offset, scale) where {N} = get_vec_dim(scale, d, sz) .* (reorient((1:sz[d]), d, Val(N)) .- get_vec_dim(offset, d, sz))
 get_1d_ids(d, sz::NTuple{N, Int}, offset::Number) where {N} = (reorient((1:sz[d]) .- get_vec_dim(offset, d, sz), d, Val(N)))
 get_1d_ids(d, sz::NTuple{N, Int}, offset) where {N} = reorient(1:sz[d], d, Val(N)) .- get_vec_dim(offset, d, sz)
-# get_1d_ids(d, sz, offset, scale) = pick_n(d, scale) .* ((1:sz[d]) .- pick_n(d, offset))
-# get_1d_ids(d, sz, offset::NTuple, scale::NTuple) = scale[d] .* ((1:sz[d]) .- offset[d])
 
 # a special in-place assignment, which gets its own differentiation rule for the reverse mode 
 # to avoid problems with memory-assignment and AD.
@@ -92,45 +107,19 @@ function in_place_assing!(res, d, fct, idc, sz1d, args_d)
 end
 
 function out_of_place_assing(res, d, fct, idc, sz1d, args_d)
-    # println("oop assign!")
     return reorient(fct.(idc, sz1d, args_d...), Val(d))
 end
 
 function ChainRulesCore.rrule(config::RuleConfig{>:HasReverseMode}, ::typeof(in_place_assing!), res, d, fct, idc, sz1d, args_d)
     # println("in rrule in_place_assing!")
     y = in_place_assing!(res, d, fct, idc, sz1d, args_d)
-    # @show d
-    # @show size(y)
-    # @show collect(y)
     _, in_place_assing_pullback = rrule_via_ad(config, out_of_place_assing, res, d, fct, idc, sz1d, args_d)
 
     function debug_dummy(dy)
-        # println("in debug_dummy") # sz is (10, 20)
-        # @show dy # NoTangent()
-        # @show size(dy)  # 1st calls: (1, 20) 2nd call: (10, 1)
         myres = in_place_assing_pullback(dy)
-        # @show myres[1] # NoTangent()
-        # @show myres[2] # NoTangent()
-        # @show myres[3] # NoTangent()
-        # @show myres[4] # NoTangent()
-        # @show myres[5] # 
-        # @show size(myres[5]) # 1st calls: (20,) 2nd call: (10,)
-        # @show myres[6] # 0.0
         return myres
     end
 
-    # function in_place_assing_pullback(dy) # dy is a tuple of arrays.
-    #     println("in in_place_assing_pullback")
-
-    #     # d_idc = mypullback(dy)
-    #     @show size(dy[1])
-    #     @show size(derivatives) # idc
-    #     each_deriv = ntuple((i) -> sum(dy[i] .* derivatives[1]), length(dy))
-    #     @show each_deriv
-    #     # @show dy[1]
-    #     return NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), each_deriv, NoTangent(), NoTangent()
-    #     # return NoTangent(), each_deriv, NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent(), NoTangent()
-    # end
     return y, in_place_assing_pullback # in_place_assing_pullback # in_place_assing_pullback
 end
 
@@ -211,11 +200,12 @@ Yet, a problem is that reduce operators with specified dimensions cause an error
 + `all_axes`: if provided, this memory is used instead of allocating a new one. This can be useful if you want to use the same memory for multiple calculations.
 + `offset`:       position of the center from which the position is measured
 + `scale`:        defines the pixel size as vector or scalar. Default: 1.0.
-+ `operator`:    the separable operator connecting the separable dimensions
+
++ `operator`:    (required) the separable operator connecting the separable dimensions
 
 ```jldoctest
 julia> fct = (r, sz, pos, sigma)-> exp(-(r-pos)^2/(2*sigma^2))
-julia> my_gaussian = calculate_broadcasted(fct, (6,5), (0.1,0.2), (0.5,1.0))
+julia> my_gaussian = calculate_broadcasted(fct, (6,5), (0.1,0.2), (0.5,1.0); operator=*)
 Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{2}}(*, 
 (Float32[4.4963495f-9; 0.00014774836; … ; 0.1978987; 0.0007318024;;], 
 Float32[0.088921614 0.48675224 … 0.726149 0.1978987]))
@@ -238,26 +228,37 @@ function calculate_broadcasted(::Type{AT}, fct, sz::NTuple{N, Int}, args...;
     # return Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
 end
 
-function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...;
-        operator = get_operator(fct), all_axes = get_bc_mem(AT, sz, operator, get_arg_sz(sz, args...)),
-        kwargs...) where {N}
-        calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes.args, kwargs...)
-        return all_axes
-        # Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables(DefaultArrType, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+"""
+    calculate_broadcasted(::Type{AT}, ::Nothing, sz::NTuple{N, Int}, args...; 
+
+specalized version of(with `fct == nothing`)  `calculate_broadcasted` which returns a `Broadcasted` object that packs only ranges. This requires (almost) no memory!
+In addition, these ranges can further be used in broadcasts even in conjuction with CUDA arrays, since no array is so far instantiated.
+
+```jldoctest
+julia> q = calculate_broadcasted(Array{Float64,2}, nothing, (4,3); offset=(2,2), scale=(1,1), operator=complex)
+Base.Broadcast.Broadcasted{Base.Broadcast.DefaultArrayStyle{2}}(complex, ([-1.0; 0.0; 1.0; 2.0;;], [-1.0 0.0 1.0]))
+
+julia> typeof(q.args)
+Tuple{Base.ReshapedArray{Float64, 2, StepRangeLen{Float64, Float64, Float64, Int64}, Tuple{}}, Base.ReshapedArray{Float64, 2, StepRangeLen{Float64, Float64, Float64, Int64}, Tuple{}}}
+
+julia> q .+ 0
+4×3 Matrix{ComplexF64}:
+ -1.0-1.0im  -1.0+0.0im  -1.0+1.0im
+  0.0-1.0im   0.0+0.0im   0.0+1.0im
+  1.0-1.0im   1.0+0.0im   1.0+1.0im
+  2.0-1.0im   2.0+0.0im   2.0+1.0im
+```
+"""
+function calculate_broadcasted(::Type{AT}, ::Nothing, sz::NTuple{N, Int}, args...; 
+    operator, kwargs...) where {AT, N}
+    @assert !haskey(kwargs, :all_axes) "all_axes should not be passed as a keyword argument to this separable function working with ranges."
+    all_axes = calculate_separables(AT, nothing, sz, args...; kwargs...)
+    return Broadcast.instantiate(Broadcast.broadcasted(operator, all_axes...))
 end
 
-# function calculate_sep_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
-#     all_axes = (similar_arr_type(AT, eltype(AT), Val(1)))(undef, sum(sz)),
-#     operator = *, defaults = nothing, kwargs...) where {AT, N}
-#     # defaults should be evaluated here and filled into args...
-#     return calculate_separables_nokw(AT, fct, sz, args...; all_axes=all_axes, kwargs...)
-# end
-
-# function calculate_sep_nokw(fct, sz::NTuple{N, Int}, args...; 
-#     all_axes = (similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(1)))(undef, sum(sz)),
-#     operator = *, defaults = nothing, kwargs...) where {N}
-#     return calculate_separables_nokw(AT, fct, sz, args...; all_axes=all_axes, kwargs...)
-# end
+function calculate_broadcasted(fct, sz::NTuple{N, Int}, args...; kwargs...) where {N}
+    return calculate_broadcasted(DefaultArrType, fct, sz, args...; kwargs...)
+end
 
 ### Versions where offst and scale are without keyword arguments
 function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...; 
@@ -268,6 +269,14 @@ function calculate_broadcasted_nokw(::Type{AT}, fct, sz::NTuple{N, Int}, args...
     # @show eltype(collect(res))
     return all_axes
     # return Broadcast.instantiate(Broadcast.broadcasted(operator, calculate_separables_nokw_hook(AT, fct, sz, args...; all_axes=all_axes, kwargs...)...))
+end
+
+function calculate_broadcasted_nokw(::Type{AT}, ::Nothing, sz::NTuple{N, Int}, args...; 
+    operator, defaults = nothing, kwargs...) where {AT, N}
+    # defaults should be evaluated here and filled into args...
+    @assert !haskey(kwargs, :all_axes) "all_axes should not be passed as a keyword argument to this separable function working with ranges."
+    all_axes = calculate_separables_nokw_hook(AT, nothing, sz, args...; kwargs...)
+    return Broadcast.instantiate(Broadcast.broadcasted(operator, all_axes...))
 end
 
 function calculate_separables_nokw_hook(::Type{AT}, fct, sz::NTuple{N, Int}, args...; kwargs...) where {AT, N} 
@@ -557,6 +566,7 @@ end
 # res = similar(g.args[1], size(vg));
 # @time gg = accumulate!(*, res, vg, dims=3);  #, init=collect(g)
 
+get_operator(anyfct) = *
 
 """
     separable_view{N}(fct, sz, args...; offset =  sz.÷2 .+1, scale = one(real(eltype(AT))), operator = *)
@@ -629,7 +639,7 @@ julia> my_gaussian = separable_create(fct, (6,5), (0.5,1.0); )
  6.50731f-5   0.000356206  0.000717312  0.000531398  0.000144823
 ```
 """
-function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operator::Function = *, kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
+function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operator::Function = get_operator(fct), kwargs...)::similar_arr_type(TA, T, Val(N)) where {T, N, TA <: AbstractArray{T}}
     # res = calculate_separables(TA, fct, sz, args...; kwargs...)
     # operator.(res...)
     res = similar(TA, sz)
@@ -638,7 +648,7 @@ function separable_create(::Type{TA}, fct, sz::NTuple{N, Int}, args...; operator
 end
 
 ## the code below seems not type-stable but the code above is. Why?
-function separable_create(fct, sz::NTuple{N, Int}, args...; operator::Function = *, kwargs...)::similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)) where {N}
+function separable_create(fct, sz::NTuple{N, Int}, args...; operator::Function = get_operator(fct), kwargs...)::similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)) where {N}
     # TT = similar_arr_type(DefaultArrType, Float32, Val(N))
     # res = calculate_separables(similar_arr_type(DefaultArrType, eltype(DefaultArrType), Val(N)), fct, sz, args...; kwargs...)
     # return operator.(res...)

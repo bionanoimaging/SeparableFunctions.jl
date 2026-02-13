@@ -26,5 +26,8 @@ SeparableFunctions.sinc_lz
 exp_ikx_sep
 exp_ikx_col
 SeparableFunctions.exp_ikx_lz
+complex_plane_sep
+complex_plane_col
+SeparableFunctions.complex_plane_lz
 ```
 

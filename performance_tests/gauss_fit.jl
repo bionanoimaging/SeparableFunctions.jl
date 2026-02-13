@@ -1,6 +1,7 @@
 using SeparableFunctions
 using BenchmarkTools
 using ComponentArrays
+# add Optim
 using Optim
 using Random
 
@@ -59,8 +60,10 @@ startvals = ComponentVector(;bg = 0.5f0, intensity=1.0f0, off=off_start, args=si
 loss(startvals)
 loss_sep(startvals)
 
+# add DifferentiationInterface ForwardDiff Zygote Tapir ReverseDiff
 using DifferentiationInterface
-import ForwardDiff, Zygote, Tapir, ReverseDiff  # AD backends you want to use 
+import ForwardDiff, Zygote, ReverseDiff  # AD backends you want to use 
+# import Tapir # broken ?
 # import Enzyme # broken??
 
 # @btime g = gradient($loss, $off_start, $sigma_start); # 64.600 μs (124 allocations: 157.73 KiB)
@@ -68,23 +71,37 @@ import ForwardDiff, Zygote, Tapir, ReverseDiff  # AD backends you want to use
 
 # check Zygote directly:
 using Zygote
-g = Zygote.gradient(loss, startvals) #
+g2 = Zygote.gradient(loss, startvals) #
 @btime g = Zygote.gradient($loss, $startvals) # 85 µs, 214 kB
-g = Zygote.gradient(loss_sep, startvals) # 
-@btime g = Zygote.gradient($loss_sep, $startvals) # 59 µs, 409 allocs, 199 kB
+g3 = Zygote.gradient(loss_sep, startvals) # 
+@btime g4 = Zygote.gradient($loss_sep, $startvals) # 59 µs, 409 allocs, 199 kB
 
-v, g = value_and_gradient(loss, AutoForwardDiff(), startvals) # (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
-v, g = value_and_gradient(loss, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
-v, g = value_and_gradient(loss, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g2 = value_and_gradient(loss, AutoForwardDiff(), startvals) # (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g2 = value_and_gradient(loss, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g2 = value_and_gradient(loss, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
-v, g = value_and_gradient(loss_sep, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
+v, g2 = value_and_gradient(loss_sep, AutoZygote(),  startvals) #     (54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
 # v, g = value_and_gradient(loss_sep, AutoReverseDiff(),  startvals) #(54.162834f0, (off = Float32[-0.3461006, -1.4118625], sigma = Float32[-0.15418892, 0.4756395]))
 
-mymem = get_bc_mem(typeof(dat), size(dat), *)
-@time fg!(dat, gaussian_raw, startvals.bg, startvals.intensity, startvals.off .+ sz.÷2 .+1, startvals.sigma; all_axes=mymem)
+function fg!(F, G, vec)
+    val_pb = Zygote.pullback(loss, vec);
+    # println("in fg!: F:$(!isnothing(F)) G:$(!isnothing(G))")
+    if !isnothing(G)
+        G .= val_pb[2](one(eltype(vec)))[1]
+        # mutating calculations specific to g!
+    end
+    if !isnothing(F)
+        # calculations specific to f
+        return val_pb[1]
+    end
+end
 
-@btime fg!($dat, $gaussian_raw, $startvals.bg, $startvals.intensity, $startvals.off .+ $sz.÷2 .+1, $startvals.sigma; all_axes=$mymem)
+mymem = get_bc_mem(typeof(dat), size(dat), *)
+
+# @time fg!(dat, gaussian_raw, startvals.bg, startvals.intensity, startvals.off .+ sz.÷2 .+1, startvals.args; all_axes=mymem)
+# @btime fg!($dat, $gaussian_raw, $startvals.bg, $startvals.intensity, $startvals.off .+ $sz.÷2 .+1, $startvals.args; all_axes=$mymem)
+
 # 35.3 µs, 165 allocs, 126 kB
 
 # broken!
@@ -122,19 +139,6 @@ res.f_calls
 # 4.065 ms (1989 allocations: 2.52 MiB), 40.440 ms (19519 allocations: 25.53 MiB)
 # Hand-separated: 60.908 ms (20067 allocations: 24.28 MiB)
 # 27 ms
-
-function fg!(F, G, vec)
-    val_pb = Zygote.pullback(loss, vec);
-    # println("in fg!: F:$(!isnothing(F)) G:$(!isnothing(G))")
-    if !isnothing(G)
-        G .= val_pb[2](one(eltype(vec)))[1]
-        # mutating calculations specific to g!
-    end
-    if !isnothing(F)
-        # calculations specific to f
-        return val_pb[1]
-    end
-end
 
 myfg! = get_fg!(dat, gaussian_raw, loss=loss_anscombe_pos)
 
